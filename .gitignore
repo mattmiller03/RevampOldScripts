@@ -1,0 +1,8 @@
+# Output directories (inventory reports, transcripts, archives)
+Output/
+
+# Temporary xlsx copies
+*.xlsx
+
+# Credential files - never commit secrets
+*.cred.xml
