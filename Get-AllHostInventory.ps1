@@ -354,6 +354,15 @@ foreach ($vc in $config.VCenters) {
             -AutoSize -FreezeTopRow -BoldTopRow -ConditionalText $hostCfRules `
             -TableName 'HostInventory' -TableStyle Medium6
 
+        # Resolve EPPlus enum values at runtime (assembly loaded by Export-Excel above)
+        $epAsm = [System.AppDomain]::CurrentDomain.GetAssemblies() |
+            Where-Object { $_.GetName().Name -like 'EPPlus*' } | Select-Object -First 1
+        $borderThin     = [Enum]::Parse($epAsm.GetType('OfficeOpenXml.Style.ExcelBorderStyle'), 'Thin')
+        $fillSolid      = [Enum]::Parse($epAsm.GetType('OfficeOpenXml.Style.ExcelFillStyle'), 'Solid')
+        $shapeRoundRect = [Enum]::Parse($epAsm.GetType('OfficeOpenXml.Drawing.eShapeStyle'), 'RoundRect')
+        $textCenter     = [Enum]::Parse($epAsm.GetType('OfficeOpenXml.Drawing.eTextAlignment'), 'Center')
+        $fillSolidFill  = [Enum]::Parse($epAsm.GetType('OfficeOpenXml.Drawing.eFillStyle'), 'SolidFill')
+
         # Add Search tab with input box and Go button
         $pkg = Open-ExcelPackage $tempXlsx
         $dataWs = $pkg.Workbook.Worksheets['HostInventory']
@@ -372,10 +381,10 @@ foreach ($vc in $config.VCenters) {
 
         # Style the input cell B3
         $searchWs.Cells[3, 2].Style.Font.Size = 11
-        $searchWs.Cells[3, 2].Style.Border.Top.Style = [OfficeOpenXml.Style.ExcelBorderStyle]::Thin
-        $searchWs.Cells[3, 2].Style.Border.Bottom.Style = [OfficeOpenXml.Style.ExcelBorderStyle]::Thin
-        $searchWs.Cells[3, 2].Style.Border.Left.Style = [OfficeOpenXml.Style.ExcelBorderStyle]::Thin
-        $searchWs.Cells[3, 2].Style.Border.Right.Style = [OfficeOpenXml.Style.ExcelBorderStyle]::Thin
+        $searchWs.Cells[3, 2].Style.Border.Top.Style = $borderThin
+        $searchWs.Cells[3, 2].Style.Border.Bottom.Style = $borderThin
+        $searchWs.Cells[3, 2].Style.Border.Left.Style = $borderThin
+        $searchWs.Cells[3, 2].Style.Border.Right.Style = $borderThin
         $searchWs.Column(2).Width = 40
 
         # Column widths
@@ -386,19 +395,19 @@ foreach ($vc in $config.VCenters) {
         for ($c = 1; $c -le $lastCol; $c++) {
             $searchWs.Cells[5, $c].Value = $dataWs.Cells[1, $c].Value
             $searchWs.Cells[5, $c].Style.Font.Bold = $true
-            $searchWs.Cells[5, $c].Style.Fill.PatternType = [OfficeOpenXml.Style.ExcelFillStyle]::Solid
+            $searchWs.Cells[5, $c].Style.Fill.PatternType = $fillSolid
             $searchWs.Cells[5, $c].Style.Fill.BackgroundColor.SetColor([System.Drawing.Color]::FromArgb(68, 114, 196))
             $searchWs.Cells[5, $c].Style.Font.Color.SetColor([System.Drawing.Color]::White)
         }
         $searchWs.View.FreezePanes(6, 1)
 
         # Add Go button as a shape
-        $button = $searchWs.Drawings.AddShape('GoButton', [OfficeOpenXml.Drawing.eShapeStyle]::RoundRect)
+        $button = $searchWs.Drawings.AddShape('GoButton', $shapeRoundRect)
         $button.SetPosition(2, 0, 2, 0)
         $button.SetSize(80, 30)
         $button.Text = 'Go'
-        $button.TextAlignment = [OfficeOpenXml.Drawing.eTextAlignment]::Center
-        $button.Fill.Style = [OfficeOpenXml.Drawing.eFillStyle]::SolidFill
+        $button.TextAlignment = $textCenter
+        $button.Fill.Style = $fillSolidFill
         $button.Fill.Color = [System.Drawing.Color]::FromArgb(68, 114, 196)
         $button.Font.Color = [System.Drawing.Color]::White
         $button.Font.Bold = $true
