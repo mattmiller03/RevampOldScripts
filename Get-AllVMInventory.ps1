@@ -251,8 +251,8 @@ foreach ($vc in $config.VCenters) {
 
             # Custom attributes
             $customAttribs = Get-Annotation -Entity $vm -ErrorAction SilentlyContinue
-            $changeNumber = ($customAttribs | Where-Object { $_.Name -eq 'Change_Number' }).Value
-            $lastBackup = ($customAttribs | Where-Object { $_.Name -eq 'LastBackup' }).Value
+            $changeNumber = ($customAttribs | Where-Object { $_.Name -eq 'Chg-number' }).Value
+            $lastBackup = ($customAttribs | Where-Object { $_.Name -eq 'NB_Last_Backup' }).Value
 
             # Cluster, Datacenter, ResourcePool, Folder
             $vmHost = $vm.VMHost
