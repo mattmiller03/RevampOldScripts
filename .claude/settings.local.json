@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__PowerShell__invoke_expression",
+      "mcp__PowerShell__get_current_location",
+      "Bash(git status:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git fetch:*)",
+      "Bash(git log:*)",
+      "Bash(git diff:*)",
+      "Bash(ls:*)",
+      "Bash(mkdir:*)",
+      "WebSearch",
+      "Bash(git rm:*)",
+      "Bash(git pull:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
