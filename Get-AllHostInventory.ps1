@@ -173,8 +173,15 @@ foreach ($vc in $config.VCenters) {
             $mgmtIP = if ($mgmtVmk) { $mgmtVmk.IP } else { '' }
             $mgmtVlanId = ''
             if ($mgmtVmk) {
-                $pg = Get-VirtualPortGroup -VMHost $vmHost -Name $mgmtVmk.PortGroupName -ErrorAction SilentlyContinue
-                if ($pg) { $mgmtVlanId = $pg.VLanId }
+                # Try standard port group first, then distributed
+                $pg = Get-VirtualPortGroup -VMHost $vmHost -Standard -Name $mgmtVmk.PortGroupName -ErrorAction SilentlyContinue
+                if ($pg) {
+                    $mgmtVlanId = $pg.VLanId
+                }
+                else {
+                    $dpg = Get-VDPortgroup -Name $mgmtVmk.PortGroupName -ErrorAction SilentlyContinue
+                    if ($dpg) { $mgmtVlanId = $dpg.VlanConfiguration.VlanId }
+                }
             }
 
             # VMotion and FT IPs
