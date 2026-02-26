@@ -400,7 +400,7 @@ foreach ($vc in $config.VCenters) {
         $pkg.Workbook.Worksheets.MoveToStart('Search')
 
         # Build the Search tab layout
-        $searchWs.Cells[1, 1].Value = 'VM Inventory Search'
+        $searchWs.Cells[1, 1].Value = 'VM Inventory - Search & New Entry'
         $searchWs.Cells[1, 1].Style.Font.Bold = $true
         $searchWs.Cells[1, 1].Style.Font.Size = 16
         $searchWs.Cells[1, 1].Style.Font.Color.SetColor([System.Drawing.Color]::FromArgb(68, 114, 196))
@@ -409,7 +409,7 @@ foreach ($vc in $config.VCenters) {
         $searchWs.Cells[3, 1].Style.Font.Bold = $true
         $searchWs.Cells[3, 1].Style.Font.Size = 11
 
-        # Style the input cell B3
+        # Style the search input cell B3
         $searchWs.Cells[3, 2].Style.Font.Size = 11
         $searchWs.Cells[3, 2].Style.Border.Top.Style = $borderThin
         $searchWs.Cells[3, 2].Style.Border.Bottom.Style = $borderThin
@@ -420,7 +420,7 @@ foreach ($vc in $config.VCenters) {
         # Column widths
         $searchWs.Column(1).Width = 20
 
-        # Copy headers to row 5 for results
+        # Copy headers to row 5
         $lastCol = $dataWs.Dimension.End.Column
         for ($c = 1; $c -le $lastCol; $c++) {
             $searchWs.Cells[5, $c].Value = $dataWs.Cells[1, $c].Value
@@ -429,31 +429,65 @@ foreach ($vc in $config.VCenters) {
             $searchWs.Cells[5, $c].Style.Fill.BackgroundColor.SetColor([System.Drawing.Color]::FromArgb(68, 114, 196))
             $searchWs.Cells[5, $c].Style.Font.Color.SetColor([System.Drawing.Color]::White)
         }
-        $searchWs.View.FreezePanes(6, 1)
 
-        # Add Go button as a shape
-        $button = $searchWs.Drawings.AddShape('GoButton', $shapeRoundRect)
-        $button.SetPosition(2, 0, 2, 0)
-        $button.SetSize(80, 30)
-        $button.Text = 'Go'
-        $button.TextAlignment = $textCenter
-        $button.Fill.Style = $fillSolidFill
-        $button.Fill.Color = [System.Drawing.Color]::FromArgb(68, 114, 196)
-        $button.Font.Color = [System.Drawing.Color]::White
-        $button.Font.Bold = $true
-        $button.Font.Size = 11
+        # Row 6: New entry input row (light green background with borders)
+        $lightGreen = [System.Drawing.Color]::FromArgb(226, 239, 218)
+        for ($c = 1; $c -le $lastCol; $c++) {
+            $searchWs.Cells[6, $c].Style.Fill.PatternType = $fillSolid
+            $searchWs.Cells[6, $c].Style.Fill.BackgroundColor.SetColor($lightGreen)
+            $searchWs.Cells[6, $c].Style.Border.Top.Style = $borderThin
+            $searchWs.Cells[6, $c].Style.Border.Bottom.Style = $borderThin
+            $searchWs.Cells[6, $c].Style.Border.Left.Style = $borderThin
+            $searchWs.Cells[6, $c].Style.Border.Right.Style = $borderThin
+        }
 
-        # VBA project with search macro assigned to button
+        # Freeze panes below the input row
+        $searchWs.View.FreezePanes(7, 1)
+
+        # Row 7: separator label for search results
+        $searchWs.Cells[7, 1].Value = 'Search Results:'
+        $searchWs.Cells[7, 1].Style.Font.Bold = $true
+        $searchWs.Cells[7, 1].Style.Font.Size = 10
+        $searchWs.Cells[7, 1].Style.Font.Color.SetColor([System.Drawing.Color]::Gray)
+
+        # Add Go button (search)
+        $goButton = $searchWs.Drawings.AddShape('GoButton', $shapeRoundRect)
+        $goButton.SetPosition(2, 0, 2, 0)
+        $goButton.SetSize(80, 30)
+        $goButton.Text = 'Search'
+        $goButton.TextAlignment = $textCenter
+        $goButton.Fill.Style = $fillSolidFill
+        $goButton.Fill.Color = [System.Drawing.Color]::FromArgb(68, 114, 196)
+        $goButton.Font.Color = [System.Drawing.Color]::White
+        $goButton.Font.Bold = $true
+        $goButton.Font.Size = 11
+
+        # Add Entry button (green, next to Go)
+        $addButton = $searchWs.Drawings.AddShape('AddEntryButton', $shapeRoundRect)
+        $addButton.SetPosition(2, 0, 3, 20)
+        $addButton.SetSize(100, 30)
+        $addButton.Text = 'Add Entry'
+        $addButton.TextAlignment = $textCenter
+        $addButton.Fill.Style = $fillSolidFill
+        $addButton.Fill.Color = [System.Drawing.Color]::FromArgb(112, 173, 71)
+        $addButton.Font.Color = [System.Drawing.Color]::White
+        $addButton.Font.Bold = $true
+        $addButton.Font.Size = 11
+
+        # VBA project
         $pkg.Workbook.CreateVBAProject()
 
-        # Assign macro via Workbook_Open (compatible with all EPPlus versions)
+        # Assign macros via Workbook_Open (compatible with all EPPlus versions)
         $pkg.Workbook.CodeModule.Code = @"
 Private Sub Workbook_Open()
-    ThisWorkbook.Worksheets("Search").Shapes("GoButton").OnAction = "RunSearch"
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Worksheets("Search")
+    ws.Shapes("GoButton").OnAction = "RunSearch"
+    ws.Shapes("AddEntryButton").OnAction = "AddEntry"
 End Sub
 "@
 
-        # Add VBA module with the search logic
+        # Add VBA module with search and add entry logic
         $vbaModule = $pkg.Workbook.VbaProject.Modules.AddModule('SearchModule')
         $vbaModule.Code = @"
 Public Sub RunSearch()
@@ -467,11 +501,11 @@ Public Sub RunSearch()
 
     Application.ScreenUpdating = False
 
-    ' Clear previous results (keep header row 5)
+    ' Clear previous search results (row 8 and below, keep rows 1-7)
     Dim lastResultRow As Long
     lastResultRow = searchWs.Cells(searchWs.Rows.Count, 1).End(xlUp).Row
-    If lastResultRow > 5 Then
-        searchWs.Rows("6:" & lastResultRow).Delete
+    If lastResultRow > 7 Then
+        searchWs.Rows("8:" & lastResultRow).Delete
     End If
 
     If searchVal = "" Then
@@ -487,7 +521,7 @@ Public Sub RunSearch()
     lastCol = tbl.ListColumns.Count
 
     Dim resultRow As Long
-    resultRow = 6
+    resultRow = 8
     Dim matchCount As Long
     matchCount = 0
 
@@ -503,7 +537,6 @@ Public Sub RunSearch()
             End If
         Next c
         If matched Then
-            ' Copy the row to search results
             Dim col As Long
             For col = 1 To lastCol
                 searchWs.Cells(resultRow, col).Value = tbl.DataBodyRange.Cells(r, col).Value
@@ -522,6 +555,45 @@ Public Sub RunSearch()
     searchWs.Cells(4, 1).Font.Color = RGB(100, 100, 100)
 
     Application.ScreenUpdating = True
+End Sub
+
+Public Sub AddEntry()
+    Dim searchWs As Worksheet
+    Dim dataWs As Worksheet
+    Set searchWs = ThisWorkbook.Worksheets("Search")
+    Set dataWs = ThisWorkbook.Worksheets("VMInventory")
+
+    ' Check that at least the Name field (column 1) has a value
+    If Trim(searchWs.Cells(6, 1).Value) = "" Then
+        MsgBox "Please enter at least a VM Name in the first cell of the green row.", vbExclamation, "Add Entry"
+        Exit Sub
+    End If
+
+    Application.ScreenUpdating = False
+
+    ' Get the data table and add a new row
+    Dim tbl As ListObject
+    Set tbl = dataWs.ListObjects("VMInventory")
+    Dim lastCol As Long
+    lastCol = tbl.ListColumns.Count
+
+    ' Add a new row to the table
+    Dim newRow As ListRow
+    Set newRow = tbl.ListRows.Add
+
+    ' Copy values from input row 6 to the new table row
+    Dim c As Long
+    For c = 1 To lastCol
+        If searchWs.Cells(6, c).Value <> "" Then
+            newRow.Range.Cells(1, c).Value = searchWs.Cells(6, c).Value
+        End If
+    Next c
+
+    ' Clear the input row
+    searchWs.Range(searchWs.Cells(6, 1), searchWs.Cells(6, lastCol)).ClearContents
+
+    Application.ScreenUpdating = True
+    MsgBox "New VM entry added to the inventory.", vbInformation, "Add Entry"
 End Sub
 "@
 
