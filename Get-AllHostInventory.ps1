@@ -356,7 +356,7 @@ foreach ($vc in $config.VCenters) {
 
         # Resolve EPPlus enum values at runtime (assembly loaded by Export-Excel above)
         $epAsm = [System.AppDomain]::CurrentDomain.GetAssemblies() |
-            Where-Object { $_.GetName().Name -like 'EPPlus*' } | Select-Object -First 1
+            Where-Object { $_.GetType('OfficeOpenXml.ExcelPackage', $false) } | Select-Object -First 1
         $borderThin     = [Enum]::Parse($epAsm.GetType('OfficeOpenXml.Style.ExcelBorderStyle'), 'Thin')
         $fillSolid      = [Enum]::Parse($epAsm.GetType('OfficeOpenXml.Style.ExcelFillStyle'), 'Solid')
         $shapeRoundRect = [Enum]::Parse($epAsm.GetType('OfficeOpenXml.Drawing.eShapeStyle'), 'RoundRect')
