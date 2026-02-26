@@ -132,8 +132,8 @@ foreach ($vc in $config.VCenters) {
     $vcName = $vc.Name
     Write-Host "`nProcessing vCenter: $vcName" -ForegroundColor Cyan
 
-    $reportFile = Join-Path $OutputDir "ESX_HostInventory_$vcName.xlsx"
-    $archiveFile = Join-Path $ArchiveDir "ESX_HostInventory_$vcName.xlsx"
+    $reportFile = Join-Path $OutputDir "ESX_HostInventory_$vcName.xlsm"
+    $archiveFile = Join-Path $ArchiveDir "ESX_HostInventory_$vcName.xlsm"
 
     # Archive previous report
     Backup-PreviousReport -SourcePath $reportFile -ArchivePath $archiveFile
@@ -345,10 +345,74 @@ foreach ($vc in $config.VCenters) {
             New-ConditionalText -Text 'Maintenance' -Range 'AC:AC' -BackgroundColor Yellow
         )
 
+        # Export to xlsx first, then add search bar and save as xlsm
+        $tempXlsx = Join-Path $OutputDir "ESX_HostInventory_$vcName.tmp.xlsx"
+        if (Test-Path $tempXlsx) { Remove-Item $tempXlsx -Force }
         if (Test-Path $reportFile) { Remove-Item $reportFile -Force }
-        $inventoryData | Export-Excel -Path $reportFile -WorksheetName 'HostInventory' `
-            -AutoSize -FreezeTopRow -BoldTopRow -ConditionalText $hostCfRules `
-            -TableName 'HostInventory' -TableStyle Medium6
+
+        $inventoryData | Export-Excel -Path $tempXlsx -WorksheetName 'HostInventory' `
+            -AutoSize -BoldTopRow -ConditionalText $hostCfRules `
+            -TableName 'HostInventory' -TableStyle Medium6 -StartRow 3
+
+        # Add search bar and VBA macro
+        $pkg = Open-ExcelPackage $tempXlsx
+        $ws = $pkg.Workbook.Worksheets['HostInventory']
+
+        # Search bar in row 1
+        $ws.Cells[1, 1].Value = 'Search:'
+        $ws.Cells[1, 1].Style.Font.Bold = $true
+        $ws.Cells[1, 1].Style.Font.Size = 12
+        $ws.Cells[1, 2].Style.Font.Size = 12
+        $ws.Cells[1, 2].Style.Border.Bottom.Style = [OfficeOpenXml.Style.ExcelBorderStyle]::Thin
+        $ws.Cells[1, 2].Style.Border.Bottom.Color.SetColor([System.Drawing.Color]::FromArgb(68, 114, 196))
+        $lastCol = $ws.Dimension.End.Column
+
+        # Freeze below the search bar and header row
+        $ws.View.FreezePanes(4, 1)
+
+        # VBA macro to filter table on search input
+        $pkg.Workbook.CreateVBAProject()
+        $ws.CodeModule.Code = @"
+Private Sub Worksheet_Change(ByVal Target As Range)
+    If Target.Address <> "`$B`$1" Then Exit Sub
+    Application.ScreenUpdating = False
+
+    Dim tbl As ListObject
+    Set tbl = Me.ListObjects("HostInventory")
+    Dim searchVal As String
+    searchVal = LCase(Trim(Me.Range("B1").Value))
+
+    If searchVal = "" Then
+        tbl.AutoFilter.ShowAllData
+    Else
+        Dim r As Long, lastRow As Long, lastCol As Long
+        lastRow = tbl.DataBodyRange.Rows.Count + tbl.HeaderRowRange.Row
+        lastCol = tbl.ListColumns.Count
+        Dim showRow As Boolean
+
+        ' Clear existing filter
+        If tbl.AutoFilter.FilterMode Then tbl.AutoFilter.ShowAllData
+
+        ' Build a range to hide non-matching rows
+        For r = tbl.DataBodyRange.Row To lastRow
+            showRow = False
+            Dim c As Long
+            For c = 1 To lastCol
+                If InStr(1, LCase(CStr(Me.Cells(r, tbl.DataBodyRange.Column + c - 1).Value)), searchVal, vbTextCompare) > 0 Then
+                    showRow = True
+                    Exit For
+                End If
+            Next c
+            Me.Rows(r).Hidden = Not showRow
+        Next r
+    End If
+
+    Application.ScreenUpdating = True
+End Sub
+"@
+
+        Close-ExcelPackage $pkg -SaveAs $reportFile
+        Remove-Item $tempXlsx -Force -ErrorAction SilentlyContinue
         Write-Host "  Collected $(@($inventoryData).Count) host(s)." -ForegroundColor Green
 
         Write-Host "  Report saved: $reportFile" -ForegroundColor Green
