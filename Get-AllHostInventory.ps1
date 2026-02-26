@@ -347,7 +347,8 @@ foreach ($vc in $config.VCenters) {
 
         if (Test-Path $reportFile) { Remove-Item $reportFile -Force }
         $inventoryData | Export-Excel -Path $reportFile -WorksheetName 'HostInventory' `
-            -AutoSize -FreezeTopRow -BoldTopRow -ConditionalText $hostCfRules
+            -AutoSize -FreezeTopRow -BoldTopRow -ConditionalText $hostCfRules `
+            -TableName 'HostInventory' -TableStyle Medium6
         Write-Host "  Collected $(@($inventoryData).Count) host(s)." -ForegroundColor Green
 
         Write-Host "  Report saved: $reportFile" -ForegroundColor Green

@@ -375,7 +375,8 @@ foreach ($vc in $config.VCenters) {
 
         if (Test-Path $reportFile) { Remove-Item $reportFile -Force }
         $inventoryData | Export-Excel -Path $reportFile -WorksheetName 'VMInventory' `
-            -AutoSize -FreezeTopRow -BoldTopRow -ConditionalText $vmCfRules
+            -AutoSize -FreezeTopRow -BoldTopRow -ConditionalText $vmCfRules `
+            -TableName 'VMInventory' -TableStyle Medium6
         Write-Host "  Collected $(@($inventoryData).Count) VM(s)." -ForegroundColor Green
         $successCount++
     }
