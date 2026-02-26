@@ -345,8 +345,9 @@ foreach ($vc in $config.VCenters) {
             New-ConditionalText -Text 'Maintenance' -Range 'AC:AC' -BackgroundColor Yellow
         )
 
+        if (Test-Path $reportFile) { Remove-Item $reportFile -Force }
         $inventoryData | Export-Excel -Path $reportFile -WorksheetName 'HostInventory' `
-            -AutoSize -FreezeTopRow -BoldTopRow -ConditionalText $hostCfRules -Force
+            -AutoSize -FreezeTopRow -BoldTopRow -ConditionalText $hostCfRules
         Write-Host "  Collected $(@($inventoryData).Count) host(s)." -ForegroundColor Green
 
         Write-Host "  Report saved: $reportFile" -ForegroundColor Green

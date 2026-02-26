@@ -364,8 +364,9 @@ foreach ($vc in $config.VCenters) {
             New-ConditionalText -Text 'vmx-13' -Range 'O:O' -BackgroundColor Yellow
         )
 
+        if (Test-Path $reportFile) { Remove-Item $reportFile -Force }
         $inventoryData | Export-Excel -Path $reportFile -WorksheetName 'VMInventory' `
-            -AutoSize -FreezeTopRow -BoldTopRow -ConditionalText $vmCfRules -Force
+            -AutoSize -FreezeTopRow -BoldTopRow -ConditionalText $vmCfRules
         Write-Host "  Collected $(@($inventoryData).Count) VM(s)." -ForegroundColor Green
         $successCount++
     }
