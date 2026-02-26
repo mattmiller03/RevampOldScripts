@@ -357,13 +357,16 @@ foreach ($vc in $config.VCenters) {
         # Add Search tab with input box and Go button
         $pkg = Open-ExcelPackage $tempXlsx
 
-        # Resolve EPPlus enum values at runtime from the package object's own assembly
+        # Resolve EPPlus enum values at runtime (search by short name to handle namespace changes across versions)
         $epAsm = $pkg.GetType().Assembly
-        $borderThin     = [Enum]::Parse($epAsm.GetType('OfficeOpenXml.Style.ExcelBorderStyle'), 'Thin')
-        $fillSolid      = [Enum]::Parse($epAsm.GetType('OfficeOpenXml.Style.ExcelFillStyle'), 'Solid')
-        $shapeRoundRect = [Enum]::Parse($epAsm.GetType('OfficeOpenXml.Drawing.eShapeStyle'), 'RoundRect')
-        $textCenter     = [Enum]::Parse($epAsm.GetType('OfficeOpenXml.Drawing.eTextAlignment'), 'Center')
-        $fillSolidFill  = [Enum]::Parse($epAsm.GetType('OfficeOpenXml.Drawing.eFillStyle'), 'SolidFill')
+        $epTypes = $epAsm.GetExportedTypes()
+        $findType = { param([string]$Name) $epTypes | Where-Object { $_.Name -eq $Name } | Select-Object -First 1 }
+
+        $borderThin     = [Enum]::Parse((& $findType 'ExcelBorderStyle'), 'Thin')
+        $fillSolid      = [Enum]::Parse((& $findType 'ExcelFillStyle'), 'Solid')
+        $shapeRoundRect = [Enum]::Parse((& $findType 'eShapeStyle'), 'RoundRect')
+        $textCenter     = [Enum]::Parse((& $findType 'eTextAlignment'), 'Center')
+        $fillSolidFill  = [Enum]::Parse((& $findType 'eFillStyle'), 'SolidFill')
         $dataWs = $pkg.Workbook.Worksheets['HostInventory']
         $searchWs = $pkg.Workbook.Worksheets.Add('Search')
         $pkg.Workbook.Worksheets.MoveToStart('Search')
