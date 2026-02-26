@@ -1,4 +1,4 @@
-#Requires -Modules VMware.PowerCLI, Microsoft.PowerShell.SecretManagement
+#Requires -Modules VMware.PowerCLI, Microsoft.PowerShell.SecretManagement, ImportExcel
 
 <#
 .SYNOPSIS
@@ -123,8 +123,8 @@ foreach ($vc in $config.VCenters) {
     $vcName = $vc.Name
     Write-Host "`nProcessing vCenter: $vcName" -ForegroundColor Cyan
 
-    $reportFile = Join-Path $OutputDir "VMInventory_$vcName.csv"
-    $archiveFile = Join-Path $ArchiveDir "VMInventory_$vcName.csv"
+    $reportFile = Join-Path $OutputDir "VMInventory_$vcName.xlsx"
+    $archiveFile = Join-Path $ArchiveDir "VMInventory_$vcName.xlsx"
 
     # Archive previous report
     Backup-PreviousReport -SourcePath $reportFile -ArchivePath $archiveFile
@@ -331,7 +331,32 @@ foreach ($vc in $config.VCenters) {
             }
         }
 
-        $inventoryData | Export-Csv -Path $reportFile -NoTypeInformation -Force
+        # Conditional formatting rules
+        $vmCfRules = @(
+            # Gray: Powered off VMs
+            New-ConditionalText -Text 'PoweredOff' -Range 'B:B' -BackgroundColor LightGray
+            # Red: Needs disk consolidation
+            New-ConditionalText -Text 'True' -Range 'J:J' -BackgroundColor Red -ConditionalTextColor White
+            # Yellow: VMTools not running or not installed
+            New-ConditionalText -Text 'toolsNotRunning' -Range 'P:P' -BackgroundColor Yellow
+            New-ConditionalText -Text 'toolsNotInstalled' -Range 'P:P' -BackgroundColor Red -ConditionalTextColor White
+            New-ConditionalText -Text 'toolsOld' -Range 'P:P' -BackgroundColor Yellow
+            # Yellow: CD connected
+            New-ConditionalText -Text 'True' -Range 'S:S' -BackgroundColor Yellow
+            # Yellow: Floppy drive present
+            New-ConditionalText -Text 'True' -Range 'G:G' -BackgroundColor Yellow
+            # Yellow: Old hardware versions (vmx-13 and below = pre-vSphere 6.7)
+            New-ConditionalText -Text 'vmx-07' -Range 'O:O' -BackgroundColor Orange -ConditionalTextColor White
+            New-ConditionalText -Text 'vmx-08' -Range 'O:O' -BackgroundColor Orange -ConditionalTextColor White
+            New-ConditionalText -Text 'vmx-09' -Range 'O:O' -BackgroundColor Orange -ConditionalTextColor White
+            New-ConditionalText -Text 'vmx-10' -Range 'O:O' -BackgroundColor Yellow
+            New-ConditionalText -Text 'vmx-11' -Range 'O:O' -BackgroundColor Yellow
+            New-ConditionalText -Text 'vmx-12' -Range 'O:O' -BackgroundColor Yellow
+            New-ConditionalText -Text 'vmx-13' -Range 'O:O' -BackgroundColor Yellow
+        )
+
+        $inventoryData | Export-Excel -Path $reportFile -WorksheetName 'VMInventory' `
+            -AutoSize -FreezeTopRow -BoldTopRow -ConditionalText $vmCfRules -Force
         Write-Host "  Collected $(@($inventoryData).Count) VM(s)." -ForegroundColor Green
         $successCount++
     }

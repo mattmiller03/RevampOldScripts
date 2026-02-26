@@ -1,4 +1,4 @@
-#Requires -Modules VMware.PowerCLI, Microsoft.PowerShell.SecretManagement
+#Requires -Modules VMware.PowerCLI, Microsoft.PowerShell.SecretManagement, ImportExcel
 
 <#
 .SYNOPSIS
@@ -123,8 +123,8 @@ foreach ($vc in $config.VCenters) {
     $vcName = $vc.Name
     Write-Host "`nProcessing vCenter: $vcName" -ForegroundColor Cyan
 
-    $reportFile = Join-Path $OutputDir "ESX_HostInventory_$vcName.csv"
-    $archiveFile = Join-Path $ArchiveDir "ESX_HostInventory_$vcName.csv"
+    $reportFile = Join-Path $OutputDir "ESX_HostInventory_$vcName.xlsx"
+    $archiveFile = Join-Path $ArchiveDir "ESX_HostInventory_$vcName.xlsx"
 
     # Archive previous report
     Backup-PreviousReport -SourcePath $reportFile -ArchivePath $archiveFile
@@ -317,7 +317,27 @@ foreach ($vc in $config.VCenters) {
             }
         }
 
-        $inventoryData | Export-Csv -Path $reportFile -NoTypeInformation -Force
+        # Conditional formatting rules
+        $hostCfRules = @(
+            # Red: SSH enabled
+            New-ConditionalText -Text 'True' -Range 'AF:AF' -BackgroundColor Red -ConditionalTextColor White
+            # Red: ESXi Shell enabled
+            New-ConditionalText -Text 'True' -Range 'AE:AE' -BackgroundColor Red -ConditionalTextColor White
+            # Red: Disconnected or NotResponding
+            New-ConditionalText -Text 'Disconnected' -Range 'AC:AC' -BackgroundColor Red -ConditionalTextColor White
+            New-ConditionalText -Text 'NotResponding' -Range 'AC:AC' -BackgroundColor Red -ConditionalTextColor White
+            # Red: ConnectionState issues
+            New-ConditionalText -Text 'Disconnected' -Range 'AQ:AQ' -BackgroundColor Red -ConditionalTextColor White
+            New-ConditionalText -Text 'NotResponding' -Range 'AQ:AQ' -BackgroundColor Red -ConditionalTextColor White
+            # Yellow: PowerState not PoweredOn
+            New-ConditionalText -Text 'Standby' -Range 'F:F' -BackgroundColor Yellow
+            New-ConditionalText -Text 'PoweredOff' -Range 'F:F' -BackgroundColor Yellow
+            # Yellow: Maintenance mode
+            New-ConditionalText -Text 'Maintenance' -Range 'AC:AC' -BackgroundColor Yellow
+        )
+
+        $inventoryData | Export-Excel -Path $reportFile -WorksheetName 'HostInventory' `
+            -AutoSize -FreezeTopRow -BoldTopRow -ConditionalText $hostCfRules -Force
         Write-Host "  Collected $(@($inventoryData).Count) host(s)." -ForegroundColor Green
 
         Write-Host "  Report saved: $reportFile" -ForegroundColor Green
