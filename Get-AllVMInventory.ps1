@@ -382,17 +382,16 @@ foreach ($vc in $config.VCenters) {
             -AutoSize -FreezeTopRow -BoldTopRow -ConditionalText $vmCfRules `
             -TableName 'VMInventory' -TableStyle Medium6
 
-        # Resolve EPPlus enum values at runtime (assembly loaded by Export-Excel above)
-        $epAsm = [System.AppDomain]::CurrentDomain.GetAssemblies() |
-            Where-Object { $_.GetType('OfficeOpenXml.ExcelPackage', $false) } | Select-Object -First 1
+        # Add Search tab with input box and Go button
+        $pkg = Open-ExcelPackage $tempXlsx
+
+        # Resolve EPPlus enum values at runtime from the package object's own assembly
+        $epAsm = $pkg.GetType().Assembly
         $borderThin     = [Enum]::Parse($epAsm.GetType('OfficeOpenXml.Style.ExcelBorderStyle'), 'Thin')
         $fillSolid      = [Enum]::Parse($epAsm.GetType('OfficeOpenXml.Style.ExcelFillStyle'), 'Solid')
         $shapeRoundRect = [Enum]::Parse($epAsm.GetType('OfficeOpenXml.Drawing.eShapeStyle'), 'RoundRect')
         $textCenter     = [Enum]::Parse($epAsm.GetType('OfficeOpenXml.Drawing.eTextAlignment'), 'Center')
         $fillSolidFill  = [Enum]::Parse($epAsm.GetType('OfficeOpenXml.Drawing.eFillStyle'), 'SolidFill')
-
-        # Add Search tab with input box and Go button
-        $pkg = Open-ExcelPackage $tempXlsx
         $dataWs = $pkg.Workbook.Worksheets['VMInventory']
         $searchWs = $pkg.Workbook.Worksheets.Add('Search')
         $pkg.Workbook.Worksheets.MoveToStart('Search')
