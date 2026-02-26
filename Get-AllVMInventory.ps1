@@ -335,7 +335,16 @@ foreach ($vc in $config.VCenters) {
                 'Change_Number'           = $changeNumber
                 'vTPM'                    = $vtpm
                 'ResourcePool'            = if ($vm.ResourcePool) { $vm.ResourcePool.Name } else { '' }
-                'FolderName'              = if ($vm.Folder) { $vm.Folder.Name } else { '' }
+                'FolderName'              = if ($vm.Folder) {
+                    $folderPath = @()
+                    $f = $vm.Folder
+                    while ($f -and $f.Name -ne 'vm') {
+                        $folderPath += $f.Name
+                        $f = $f.Parent
+                    }
+                    [array]::Reverse($folderPath)
+                    $folderPath -join '/'
+                } else { '' }
                 'LastBackup'              = $lastBackup
             }
         }
