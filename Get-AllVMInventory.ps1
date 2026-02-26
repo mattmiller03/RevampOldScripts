@@ -445,7 +445,13 @@ foreach ($vc in $config.VCenters) {
 
         # VBA project with search macro assigned to button
         $pkg.Workbook.CreateVBAProject()
-        $button.Macro = 'RunSearch'
+
+        # Assign macro via Workbook_Open (compatible with all EPPlus versions)
+        $pkg.Workbook.CodeModule.Code = @"
+Private Sub Workbook_Open()
+    ThisWorkbook.Worksheets("Search").Shapes("GoButton").OnAction = "RunSearch"
+End Sub
+"@
 
         # Add VBA module with the search logic
         $vbaModule = $pkg.Workbook.VbaProject.Modules.AddModule('SearchModule')
