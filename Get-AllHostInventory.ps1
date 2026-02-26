@@ -1,4 +1,4 @@
-#Requires -Modules VMware.PowerCLI, Microsoft.PowerShell.SecretManagement, ImportExcel
+#Requires -Modules Microsoft.PowerShell.SecretManagement, ImportExcel
 
 <#
 .SYNOPSIS
@@ -50,6 +50,15 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Accept either VMware.PowerCLI or VCF.PowerCLI (Broadcom rebrand)
+$powerCLI = Get-Module -ListAvailable -Name 'VCF.PowerCLI', 'VMware.PowerCLI' | Select-Object -First 1
+if (-not $powerCLI) {
+    Write-Error "Neither VMware.PowerCLI nor VCF.PowerCLI is installed. Install one of them to continue."
+    return
+}
+Import-Module $powerCLI.Name -ErrorAction Stop
+Write-Verbose "Loaded $($powerCLI.Name) v$($powerCLI.Version)"
 
 #region Functions
 
