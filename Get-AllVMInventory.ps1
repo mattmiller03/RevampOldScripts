@@ -373,66 +373,136 @@ foreach ($vc in $config.VCenters) {
             New-ConditionalText -Text 'vmx-13' -Range 'O:O' -BackgroundColor Yellow
         )
 
-        # Export to xlsx first, then add search bar and save as xlsm
+        # Export data to temp xlsx, then add Search tab and save as xlsm
         $tempXlsx = Join-Path $OutputDir "VMInventory_$vcName.tmp.xlsx"
         if (Test-Path $tempXlsx) { Remove-Item $tempXlsx -Force }
         if (Test-Path $reportFile) { Remove-Item $reportFile -Force }
 
         $inventoryData | Export-Excel -Path $tempXlsx -WorksheetName 'VMInventory' `
-            -AutoSize -BoldTopRow -ConditionalText $vmCfRules `
-            -TableName 'VMInventory' -TableStyle Medium6 -StartRow 3
+            -AutoSize -FreezeTopRow -BoldTopRow -ConditionalText $vmCfRules `
+            -TableName 'VMInventory' -TableStyle Medium6
 
-        # Add search bar and VBA macro
+        # Add Search tab with input box and Go button
         $pkg = Open-ExcelPackage $tempXlsx
-        $ws = $pkg.Workbook.Worksheets['VMInventory']
+        $dataWs = $pkg.Workbook.Worksheets['VMInventory']
+        $searchWs = $pkg.Workbook.Worksheets.Add('Search')
+        $pkg.Workbook.Worksheets.MoveToStart('Search')
 
-        # Search bar in row 1
-        $ws.Cells[1, 1].Value = 'Search:'
-        $ws.Cells[1, 1].Style.Font.Bold = $true
-        $ws.Cells[1, 1].Style.Font.Size = 12
-        $ws.Cells[1, 2].Style.Font.Size = 12
-        $ws.Cells[1, 2].Style.Border.Bottom.Style = [OfficeOpenXml.Style.ExcelBorderStyle]::Thin
-        $ws.Cells[1, 2].Style.Border.Bottom.Color.SetColor([System.Drawing.Color]::FromArgb(68, 114, 196))
+        # Build the Search tab layout
+        $searchWs.Cells[1, 1].Value = 'VM Inventory Search'
+        $searchWs.Cells[1, 1].Style.Font.Bold = $true
+        $searchWs.Cells[1, 1].Style.Font.Size = 16
+        $searchWs.Cells[1, 1].Style.Font.Color.SetColor([System.Drawing.Color]::FromArgb(68, 114, 196))
 
-        # Freeze below the search bar and header row
-        $ws.View.FreezePanes(4, 1)
+        $searchWs.Cells[3, 1].Value = 'Enter search term:'
+        $searchWs.Cells[3, 1].Style.Font.Bold = $true
+        $searchWs.Cells[3, 1].Style.Font.Size = 11
 
-        # VBA macro to filter table on search input
+        # Style the input cell B3
+        $searchWs.Cells[3, 2].Style.Font.Size = 11
+        $searchWs.Cells[3, 2].Style.Border.Top.Style = [OfficeOpenXml.Style.ExcelBorderStyle]::Thin
+        $searchWs.Cells[3, 2].Style.Border.Bottom.Style = [OfficeOpenXml.Style.ExcelBorderStyle]::Thin
+        $searchWs.Cells[3, 2].Style.Border.Left.Style = [OfficeOpenXml.Style.ExcelBorderStyle]::Thin
+        $searchWs.Cells[3, 2].Style.Border.Right.Style = [OfficeOpenXml.Style.ExcelBorderStyle]::Thin
+        $searchWs.Column(2).Width = 40
+
+        # Column widths
+        $searchWs.Column(1).Width = 20
+
+        # Copy headers to row 5 for results
+        $lastCol = $dataWs.Dimension.End.Column
+        for ($c = 1; $c -le $lastCol; $c++) {
+            $searchWs.Cells[5, $c].Value = $dataWs.Cells[1, $c].Value
+            $searchWs.Cells[5, $c].Style.Font.Bold = $true
+            $searchWs.Cells[5, $c].Style.Fill.PatternType = [OfficeOpenXml.Style.ExcelFillStyle]::Solid
+            $searchWs.Cells[5, $c].Style.Fill.BackgroundColor.SetColor([System.Drawing.Color]::FromArgb(68, 114, 196))
+            $searchWs.Cells[5, $c].Style.Font.Color.SetColor([System.Drawing.Color]::White)
+        }
+        $searchWs.View.FreezePanes(6, 1)
+
+        # Add Go button as a shape
+        $button = $searchWs.Drawings.AddShape('GoButton', [OfficeOpenXml.Drawing.eShapeStyle]::RoundRect)
+        $button.SetPosition(2, 0, 2, 0)
+        $button.SetSize(80, 30)
+        $button.Text = 'Go'
+        $button.TextAlignment = [OfficeOpenXml.Drawing.eTextAlignment]::Center
+        $button.Fill.Style = [OfficeOpenXml.Drawing.eFillStyle]::SolidFill
+        $button.Fill.Color = [System.Drawing.Color]::FromArgb(68, 114, 196)
+        $button.Font.Color = [System.Drawing.Color]::White
+        $button.Font.Bold = $true
+        $button.Font.Size = 11
+
+        # VBA project with search macro assigned to button
         $pkg.Workbook.CreateVBAProject()
-        $ws.CodeModule.Code = @"
-Private Sub Worksheet_Change(ByVal Target As Range)
-    If Target.Address <> "`$B`$1" Then Exit Sub
+        $button.Macro = 'RunSearch'
+
+        # Add VBA module with the search logic
+        $vbaModule = $pkg.Workbook.VbaProject.Modules.AddModule('SearchModule')
+        $vbaModule.Code = @"
+Public Sub RunSearch()
+    Dim searchWs As Worksheet
+    Dim dataWs As Worksheet
+    Set searchWs = ThisWorkbook.Worksheets("Search")
+    Set dataWs = ThisWorkbook.Worksheets("VMInventory")
+
+    Dim searchVal As String
+    searchVal = LCase(Trim(searchWs.Range("B3").Value))
+
     Application.ScreenUpdating = False
 
-    Dim tbl As ListObject
-    Set tbl = Me.ListObjects("VMInventory")
-    Dim searchVal As String
-    searchVal = LCase(Trim(Me.Range("B1").Value))
+    ' Clear previous results (keep header row 5)
+    Dim lastResultRow As Long
+    lastResultRow = searchWs.Cells(searchWs.Rows.Count, 1).End(xlUp).Row
+    If lastResultRow > 5 Then
+        searchWs.Rows("6:" & lastResultRow).Delete
+    End If
 
     If searchVal = "" Then
-        tbl.AutoFilter.ShowAllData
-    Else
-        Dim r As Long, lastRow As Long, lastCol As Long
-        lastRow = tbl.DataBodyRange.Rows.Count + tbl.HeaderRowRange.Row
-        lastCol = tbl.ListColumns.Count
-        Dim showRow As Boolean
-
-        ' Clear existing filter
-        If tbl.AutoFilter.FilterMode Then tbl.AutoFilter.ShowAllData
-
-        ' Build a range to hide non-matching rows
-        For r = tbl.DataBodyRange.Row To lastRow
-            showRow = False
-            Dim c As Long
-            For c = 1 To lastCol
-                If InStr(1, LCase(CStr(Me.Cells(r, tbl.DataBodyRange.Column + c - 1).Value)), searchVal, vbTextCompare) > 0 Then
-                    showRow = True
-                    Exit For
-                End If
-            Next c
-            Me.Rows(r).Hidden = Not showRow
-        Next r
+        MsgBox "Please enter a search term.", vbInformation, "Search"
+        Application.ScreenUpdating = True
+        Exit Sub
     End If
+
+    ' Search the data table
+    Dim tbl As ListObject
+    Set tbl = dataWs.ListObjects("VMInventory")
+    Dim lastCol As Long
+    lastCol = tbl.ListColumns.Count
+
+    Dim resultRow As Long
+    resultRow = 6
+    Dim matchCount As Long
+    matchCount = 0
+
+    Dim r As Long
+    For r = 1 To tbl.DataBodyRange.Rows.Count
+        Dim matched As Boolean
+        matched = False
+        Dim c As Long
+        For c = 1 To lastCol
+            If InStr(1, LCase(CStr(tbl.DataBodyRange.Cells(r, c).Value)), searchVal, vbTextCompare) > 0 Then
+                matched = True
+                Exit For
+            End If
+        Next c
+        If matched Then
+            ' Copy the row to search results
+            Dim col As Long
+            For col = 1 To lastCol
+                searchWs.Cells(resultRow, col).Value = tbl.DataBodyRange.Cells(r, col).Value
+            Next col
+            resultRow = resultRow + 1
+            matchCount = matchCount + 1
+        End If
+    Next r
+
+    ' Auto-fit columns on search sheet
+    searchWs.Columns("A:" & Chr(64 + Application.WorksheetFunction.Min(lastCol, 26))).AutoFit
+
+    ' Status message
+    searchWs.Cells(4, 1).Value = matchCount & " result(s) found"
+    searchWs.Cells(4, 1).Font.Italic = True
+    searchWs.Cells(4, 1).Font.Color = RGB(100, 100, 100)
 
     Application.ScreenUpdating = True
 End Sub
