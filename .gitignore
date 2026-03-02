@@ -8,3 +8,4 @@ Output/
 # Credential files - never commit secrets
 *.cred.xml
 config/vcenters.json
+config/vcenters.json
