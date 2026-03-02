@@ -46,19 +46,27 @@ param(
     [string]$ArchiveDir = (Join-Path $PSScriptRoot 'Output\HostInventory\Archive'),
 
     [Parameter()]
-    [string]$TranscriptDir = (Join-Path $PSScriptRoot 'Output\Transcripts')
+    [string]$TranscriptDir = (Join-Path $PSScriptRoot 'Output\Transcripts'),
+
+    [Parameter()]
+    [switch]$SkipModuleCheck
 )
 
 $ErrorActionPreference = 'Stop'
 
 # Accept either VMware.PowerCLI or VCF.PowerCLI (Broadcom rebrand)
-$powerCLI = Get-Module -ListAvailable -Name 'VCF.PowerCLI', 'VMware.PowerCLI' | Select-Object -First 1
-if (-not $powerCLI) {
-    Write-Error "Neither VMware.PowerCLI nor VCF.PowerCLI is installed. Install one of them to continue."
-    return
+if (-not $SkipModuleCheck) {
+    $powerCLI = Get-Module -ListAvailable -Name 'VCF.PowerCLI', 'VMware.PowerCLI' | Select-Object -First 1
+    if (-not $powerCLI) {
+        Write-Error "Neither VMware.PowerCLI nor VCF.PowerCLI is installed. Install one of them to continue."
+        return
+    }
+    Import-Module $powerCLI.Name -ErrorAction Stop
+    Write-Verbose "Loaded $($powerCLI.Name) v$($powerCLI.Version)"
 }
-Import-Module $powerCLI.Name -ErrorAction Stop
-Write-Verbose "Loaded $($powerCLI.Name) v$($powerCLI.Version)"
+else {
+    Write-Verbose "Skipping PowerCLI module check"
+}
 
 #region Functions
 
