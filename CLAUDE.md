@@ -36,7 +36,7 @@ Credentials are stored as DPAPI-encrypted XML files via PowerShell's `Export-Cli
 
 ### VM Inventory (Get-AllVMInventory.ps1)
 - Produces a **single** `VMInventory_All.xlsm` workbook with multiple tabs:
-  - **Search** — VBA-powered search UI with Add Entry functionality (searches All_VMs table)
+  - **Search** — VBA-powered search UI (searches All_VMs table)
   - **All_VMs** — Combined VM inventory from all vCenters
   - **MissingTags** — VMs missing any required tag category (configured in JSON)
   - **VM_BIOS** — VMs using BIOS firmware (not EFI)
