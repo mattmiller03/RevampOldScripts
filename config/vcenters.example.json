@@ -1,24 +1,27 @@
 {
     "CredentialDir": "config/credentials",
+    "TagPrefix": "vCenter",
     "RequiredTags": [
-        { "Category": "Application", "Columns": 2 },
-        { "Category": "Function", "Columns": 1 },
-        { "Category": "OperatingSystem", "Columns": 1 },
-        { "Category": "EnclaveID", "Columns": 1 },
-        { "Category": "ResourceType", "Columns": 1 },
-        { "Category": "Site_Location", "Columns": 1 },
-        { "Category": "VlanID", "Columns": 4 },
-        { "Category": "TeamPoc", "Columns": 4 }
+        { "Category": "App-Name", "DisplayName": "Application", "Columns": 2 },
+        { "Category": "Function", "DisplayName": "Function", "Columns": 1 },
+        { "Category": "Os-Version", "DisplayName": "OperatingSystem", "Columns": 1 },
+        { "Category": "Enclave_ID", "DisplayName": "EnclaveID", "Columns": 1 },
+        { "Category": "Resource_Type", "DisplayName": "ResourceType", "Columns": 1 },
+        { "Category": "Site_Location", "DisplayName": "Site_Location", "Columns": 1 },
+        { "Category": "VLAN_ID", "DisplayName": "VlanID", "Columns": 4 },
+        { "Category": "TeamPoc", "DisplayName": "TeamPoc", "Columns": 4 }
     ],
     "VCenters": [
         {
             "Name": "vcenter01.example.com",
             "Alias": "Prod:SiteA",
+            "TagEnvironment": "Prod",
             "CredentialFile": "vcenter01.cred.xml"
         },
         {
             "Name": "vcenter02.example.com",
             "Alias": "Dev:SiteA",
+            "TagEnvironment": "Dev",
             "CredentialFile": "vcenter02.cred.xml"
         }
     ]

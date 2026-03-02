@@ -335,11 +335,15 @@ foreach ($vc in $config.VCenters) {
             }
 
             # Add tag columns dynamically from config
+            # vSphere category = "{TagPrefix}-{TagEnvironment}-{Category}"
+            # Spreadsheet column = "{DisplayName}_Tag{N}"
+            $tagEnv = $vc.TagEnvironment
             foreach ($tagDef in $config.RequiredTags) {
+                $vSphereCategory = "$($config.TagPrefix)-$tagEnv-$($tagDef.Category)"
                 for ($t = 0; $t -lt $tagDef.Columns; $t++) {
                     $suffix = if ($tagDef.Columns -gt 1) { ($t + 1) } else { '' }
-                    $propName = "$($tagDef.Category)_Tag$suffix"
-                    $props[$propName] = & $getTag $tagDef.Category $t
+                    $propName = "$($tagDef.DisplayName)_Tag$suffix"
+                    $props[$propName] = & $getTag $vSphereCategory $t
                 }
             }
 
@@ -396,12 +400,12 @@ if ($allInventoryData.Count -eq 0) {
 
 Write-Host "`nBuilding workbook with $($allInventoryData.Count) total VM(s)..." -ForegroundColor Cyan
 
-# Build tag column names for reference
+# Build tag column names for reference (uses DisplayName for column headers)
 $tagColumnNames = [System.Collections.Generic.List[string]]::new()
 foreach ($tagDef in $config.RequiredTags) {
     for ($t = 0; $t -lt $tagDef.Columns; $t++) {
         $suffix = if ($tagDef.Columns -gt 1) { ($t + 1) } else { '' }
-        $tagColumnNames.Add("$($tagDef.Category)_Tag$suffix")
+        $tagColumnNames.Add("$($tagDef.DisplayName)_Tag$suffix")
     }
 }
 
@@ -412,14 +416,14 @@ $missingTagsData = foreach ($vm in $allInventoryData) {
         $allEmpty = $true
         for ($t = 0; $t -lt $tagDef.Columns; $t++) {
             $suffix = if ($tagDef.Columns -gt 1) { ($t + 1) } else { '' }
-            $propName = "$($tagDef.Category)_Tag$suffix"
+            $propName = "$($tagDef.DisplayName)_Tag$suffix"
             if ($vm.$propName -ne '') {
                 $allEmpty = $false
                 break
             }
         }
         if ($allEmpty) {
-            $missingCategories.Add($tagDef.Category)
+            $missingCategories.Add($tagDef.DisplayName)
         }
     }
     if ($missingCategories.Count -gt 0) {

@@ -44,14 +44,19 @@ Credentials are stored as DPAPI-encrypted XML files via PowerShell's `Export-Cli
   - **\<vCenter name\>** — One tab per vCenter with that vCenter's VMs
 
 ### Tag Configuration
-Tag categories and column counts are driven by `RequiredTags` in `config/vcenters.json`:
+vSphere tag categories follow the naming pattern `{TagPrefix}-{TagEnvironment}-{Category}` (e.g., `vCenter-Prod-App-Name`). The JSON config defines:
+- `TagPrefix` — global prefix (e.g., `"vCenter"`)
+- `RequiredTags` — each with `Category` (vSphere suffix), `DisplayName` (spreadsheet column), and `Columns` count
+- `TagEnvironment` — per-vCenter environment identifier (e.g., `"Prod"`, `"Dev"`, `"OT"`)
+
 ```json
+"TagPrefix": "vCenter",
 "RequiredTags": [
-    { "Category": "Application", "Columns": 2 },
-    { "Category": "VlanID", "Columns": 4 }
+    { "Category": "App-Name", "DisplayName": "Application", "Columns": 2 },
+    { "Category": "VLAN_ID", "DisplayName": "VlanID", "Columns": 4 }
 ]
 ```
-Tag columns are built dynamically on each VM object (e.g., `Application_Tag1`, `Application_Tag2`). A VM appears on the MissingTags tab if **any** required tag category has all its columns blank.
+At runtime the script looks up `vCenter-Prod-App-Name` in vSphere but writes the column as `Application_Tag1`. A VM appears on the MissingTags tab if **any** required tag category has all its columns blank.
 
 ### Shared Patterns
 Both inventory scripts share:
