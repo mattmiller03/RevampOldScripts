@@ -50,19 +50,21 @@ if (-not (Test-Path -Path $credDir)) {
 # --- Prompt for and store credentials for each vCenter ---
 foreach ($vc in $config.VCenters) {
     $credPath = Join-Path $credDir $vc.CredentialFile
+    $vcAlias = if ($vc.Alias) { $vc.Alias } else { $vc.Name }
+    $vcEnv = if ($vc.TagEnvironment) { " [$($vc.TagEnvironment)]" } else { '' }
 
-    Write-Host "`nEnter credentials for vCenter: $($vc.Name)" -ForegroundColor Cyan
+    Write-Host "`nEnter credentials for vCenter: $vcAlias$vcEnv ($($vc.Name))" -ForegroundColor Cyan
     Write-Host "  Credential file: $credPath" -ForegroundColor Gray
 
-    $credential = Get-Credential -Message "Credentials for $($vc.Name)"
+    $credential = Get-Credential -Message "Credentials for $vcAlias$vcEnv ($($vc.Name))"
 
     if ($null -eq $credential) {
-        Write-Warning "Skipped $($vc.Name) - no credential provided."
+        Write-Warning "Skipped $vcAlias ($($vc.Name)) - no credential provided."
         continue
     }
 
     $credential | Export-Clixml -Path $credPath -Force
-    Write-Host "  Credential stored for $($vc.Name)." -ForegroundColor Green
+    Write-Host "  Credential stored for $vcAlias$vcEnv." -ForegroundColor Green
 }
 
 Write-Host "`nSetup complete. Stored credentials for $($config.VCenters.Count) vCenter(s) in '$credDir'." -ForegroundColor Green
