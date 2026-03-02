@@ -1,0 +1,25 @@
+{
+    "CredentialDir": "config/credentials",
+    "RequiredTags": [
+        { "Category": "Application", "Columns": 2 },
+        { "Category": "Function", "Columns": 1 },
+        { "Category": "OperatingSystem", "Columns": 1 },
+        { "Category": "EnclaveID", "Columns": 1 },
+        { "Category": "ResourceType", "Columns": 1 },
+        { "Category": "Site_Location", "Columns": 1 },
+        { "Category": "VlanID", "Columns": 4 },
+        { "Category": "TeamPoc", "Columns": 4 }
+    ],
+    "VCenters": [
+        {
+            "Name": "vcenter01.example.com",
+            "Alias": "Prod:SiteA",
+            "CredentialFile": "vcenter01.cred.xml"
+        },
+        {
+            "Name": "vcenter02.example.com",
+            "Alias": "Dev:SiteA",
+            "CredentialFile": "vcenter02.cred.xml"
+        }
+    ]
+}

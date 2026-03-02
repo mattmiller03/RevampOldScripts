@@ -130,10 +130,11 @@ $failCount = 0
 
 foreach ($vc in $config.VCenters) {
     $vcName = $vc.Name
-    Write-Host "`nProcessing vCenter: $vcName" -ForegroundColor Cyan
+    $vcAlias = if ($vc.Alias) { $vc.Alias } else { $vcName }
+    Write-Host "`nProcessing vCenter: $vcAlias ($vcName)" -ForegroundColor Cyan
 
-    $reportFile = Join-Path $OutputDir "ESX_HostInventory_$vcName.xlsm"
-    $archiveFile = Join-Path $ArchiveDir "ESX_HostInventory_$vcName.xlsm"
+    $reportFile = Join-Path $OutputDir "ESX_HostInventory_$vcAlias.xlsm"
+    $archiveFile = Join-Path $ArchiveDir "ESX_HostInventory_$vcAlias.xlsm"
 
     # Archive previous report
     Backup-PreviousReport -SourcePath $reportFile -ArchivePath $archiveFile

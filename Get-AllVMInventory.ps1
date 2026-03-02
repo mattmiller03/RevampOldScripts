@@ -145,7 +145,8 @@ $failCount = 0
 
 foreach ($vc in $config.VCenters) {
     $vcName = $vc.Name
-    Write-Host "`nProcessing vCenter: $vcName" -ForegroundColor Cyan
+    $vcAlias = if ($vc.Alias) { $vc.Alias } else { $vcName }
+    Write-Host "`nProcessing vCenter: $vcAlias ($vcName)" -ForegroundColor Cyan
 
     $connection = $null
     try {
@@ -366,7 +367,7 @@ foreach ($vc in $config.VCenters) {
         foreach ($item in $vcInventory) {
             $allInventoryData.Add($item)
         }
-        $perVCenterData[$vcName] = $vcInventory
+        $perVCenterData[$vcAlias] = $vcInventory
 
         Write-Host "  Collected $($vcInventory.Count) VM(s)." -ForegroundColor Green
         $successCount++
