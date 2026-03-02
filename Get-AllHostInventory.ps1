@@ -1,4 +1,4 @@
-#Requires -Modules Microsoft.PowerShell.SecretManagement, ImportExcel
+#Requires -Modules ImportExcel
 
 <#
 .SYNOPSIS
@@ -6,12 +6,12 @@
 
 .DESCRIPTION
     Iterates through each vCenter server listed in config/vcenters.json, connects using
-    credentials stored in a SecretManagement vault, collects host inventory, and saves
-    the results as per-vCenter CSV files.
+    DPAPI-encrypted credentials (created by Initialize-VCenterCredentials.ps1), collects
+    host inventory, and saves the results as per-vCenter Excel files.
 
     Previous inventory files are archived before new ones are created.
 
-    Credentials must be set up first by running Initialize-VCenterSecrets.ps1.
+    Credentials must be set up first by running Initialize-VCenterCredentials.ps1.
 
 .PARAMETER ConfigFile
     Path to the JSON configuration file. Defaults to config/vcenters.json.
@@ -118,7 +118,7 @@ if (-not (Test-Path -Path $ConfigFile)) {
 }
 
 $config = Get-Content -Path $ConfigFile -Raw | ConvertFrom-Json
-$vaultName = $config.VaultName
+$credDir = Join-Path $PSScriptRoot $config.CredentialDir
 Write-Host "Loaded $($config.VCenters.Count) vCenter(s) from config." -ForegroundColor Cyan
 
 #endregion Initialization
@@ -140,9 +140,13 @@ foreach ($vc in $config.VCenters) {
 
     $connection = $null
     try {
-        # Retrieve credential from SecretManagement vault
-        Write-Verbose "Retrieving credential for '$($vc.SecretName)' from vault '$vaultName'"
-        $credential = Get-Secret -Name $vc.SecretName -Vault $vaultName -ErrorAction Stop
+        # Retrieve credential from DPAPI-encrypted file
+        $credPath = Join-Path $credDir $vc.CredentialFile
+        if (-not (Test-Path -Path $credPath)) {
+            Write-Error "Credential file not found: $credPath. Run Initialize-VCenterCredentials.ps1 first."
+        }
+        Write-Verbose "Loading credential from '$credPath'"
+        $credential = Import-Clixml -Path $credPath -ErrorAction Stop
 
         # Connect to vCenter
         Write-Host "  Connecting to $vcName..." -ForegroundColor Gray

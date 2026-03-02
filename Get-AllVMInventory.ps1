@@ -1,29 +1,34 @@
-#Requires -Modules Microsoft.PowerShell.SecretManagement, ImportExcel
+#Requires -Modules ImportExcel
 
 <#
 .SYNOPSIS
-    Collects VM inventory from all vCenters defined in the configuration file.
+    Collects VM inventory from all vCenters and produces a multi-tab Excel workbook.
 
 .DESCRIPTION
     Iterates through each vCenter server listed in config/vcenters.json, connects using
-    credentials stored in a SecretManagement vault, collects VM inventory, and saves
-    the results as per-vCenter CSV files.
+    DPAPI-encrypted credentials (created by Initialize-VCenterCredentials.ps1), collects
+    VM inventory, and produces a single Excel workbook with multiple tabs:
 
-    Previous inventory files are archived before new ones are created.
+      - Search      : Search UI with VBA macro (searches All_VMs table)
+      - All_VMs     : Combined inventory from all vCenters
+      - MissingTags : VMs missing any required tag category (configurable in JSON)
+      - VM_BIOS     : VMs using BIOS firmware (not EFI)
+      - VMs_Powered_Off : VMs in PoweredOff state
+      - <vCenter>   : One tab per vCenter with that vCenter's VMs
 
-    Credentials must be set up first by running Initialize-VCenterSecrets.ps1.
+    Tag categories and column counts are driven by the RequiredTags array in the JSON config.
 
 .PARAMETER ConfigFile
     Path to the JSON configuration file. Defaults to config/vcenters.json.
 
 .PARAMETER OutputDir
-    Directory where inventory CSV files are written. Created if it does not exist.
+    Directory where the inventory workbook is written. Created if it does not exist.
 
 .PARAMETER ArchiveDir
-    Directory where previous inventory files are moved before a new run. Created if it does not exist.
+    Directory where the previous workbook is moved before a new run.
 
 .PARAMETER TranscriptDir
-    Directory for transcript log files. Created if it does not exist.
+    Directory for transcript log files.
 
 .EXAMPLE
     .\Get-AllVMInventory.ps1
@@ -81,7 +86,6 @@ function Backup-PreviousReport {
         return
     }
 
-    # Remove existing archive copy if present
     if (Test-Path -Path $ArchivePath) {
         Write-Verbose "Removing old archive: $ArchivePath"
         Remove-Item -Path $ArchivePath -Force
@@ -118,12 +122,23 @@ if (-not (Test-Path -Path $ConfigFile)) {
 }
 
 $config = Get-Content -Path $ConfigFile -Raw | ConvertFrom-Json
-$vaultName = $config.VaultName
+$credDir = Join-Path $PSScriptRoot $config.CredentialDir
 Write-Host "Loaded $($config.VCenters.Count) vCenter(s) from config." -ForegroundColor Cyan
+Write-Host "Tag categories: $($config.RequiredTags.Count) configured." -ForegroundColor Cyan
+
+# Output file paths
+$reportFile = Join-Path $OutputDir 'VMInventory_All.xlsm'
+$archiveFile = Join-Path $ArchiveDir 'VMInventory_All.xlsm'
+
+# Archive previous report
+Backup-PreviousReport -SourcePath $reportFile -ArchivePath $archiveFile
 
 #endregion Initialization
 
-#region Main Loop
+#region Collection Phase
+
+$allInventoryData = [System.Collections.Generic.List[PSCustomObject]]::new()
+$perVCenterData = @{}
 
 $successCount = 0
 $failCount = 0
@@ -132,17 +147,15 @@ foreach ($vc in $config.VCenters) {
     $vcName = $vc.Name
     Write-Host "`nProcessing vCenter: $vcName" -ForegroundColor Cyan
 
-    $reportFile = Join-Path $OutputDir "VMInventory_$vcName.xlsm"
-    $archiveFile = Join-Path $ArchiveDir "VMInventory_$vcName.xlsm"
-
-    # Archive previous report
-    Backup-PreviousReport -SourcePath $reportFile -ArchivePath $archiveFile
-
     $connection = $null
     try {
-        # Retrieve credential from SecretManagement vault
-        Write-Verbose "Retrieving credential for '$($vc.SecretName)' from vault '$vaultName'"
-        $credential = Get-Secret -Name $vc.SecretName -Vault $vaultName -ErrorAction Stop
+        # Retrieve credential from DPAPI-encrypted file
+        $credPath = Join-Path $credDir $vc.CredentialFile
+        if (-not (Test-Path -Path $credPath)) {
+            Write-Error "Credential file not found: $credPath. Run Initialize-VCenterCredentials.ps1 first."
+        }
+        Write-Verbose "Loading credential from '$credPath'"
+        $credential = Import-Clixml -Path $credPath -ErrorAction Stop
 
         # Connect to vCenter
         Write-Host "  Connecting to $vcName..." -ForegroundColor Gray
@@ -249,7 +262,7 @@ foreach ($vc in $config.VCenters) {
                 }
             }
 
-            # Helper to get tag values by category (supports multiple values)
+            # Helper to get tag values by category
             $getTag = {
                 param([string]$Category, [int]$Index)
                 if ($tagsByCategory.ContainsKey($Category) -and $tagsByCategory[$Category].Count -gt $Index) {
@@ -268,7 +281,8 @@ foreach ($vc in $config.VCenters) {
             $vmCluster = Get-Cluster -VMHost $vmHost -ErrorAction SilentlyContinue
             $vmDatacenter = Get-Datacenter -VM $vm -ErrorAction SilentlyContinue
 
-            [PSCustomObject]@{
+            # Build base properties (ordered)
+            $props = [ordered]@{
                 'Name'                    = $vm.Name
                 'PowerState'              = $vm.PowerState
                 'Cluster'                 = if ($vmCluster) { $vmCluster.Name } else { '' }
@@ -317,168 +331,287 @@ foreach ($vc in $config.VCenters) {
                 'VvtdEnabled'             = $vvtd
                 'VbsEnabled'              = $vbs
                 'Hostname not equal VMname' = $nameNotEqual
-                'Application_Tag1'        = & $getTag 'Application' 0
-                'Application_Tag2'        = & $getTag 'Application' 1
-                'Function_Tag'            = & $getTag 'Function' 0
-                'OperatingSystem_Tag'     = & $getTag 'OperatingSystem' 0
-                'EnclaveID_Tag'           = & $getTag 'EnclaveID' 0
-                'ResourceType_Tag'        = & $getTag 'ResourceType' 0
-                'Site_Location_Tag'       = & $getTag 'Site_Location' 0
-                'VlanID_Tag1'             = & $getTag 'VlanID' 0
-                'VlanID_Tag2'             = & $getTag 'VlanID' 1
-                'VlanID_Tag3'             = & $getTag 'VlanID' 2
-                'VlanID_Tag4'             = & $getTag 'VlanID' 3
-                'TeamPoc_Tag1'            = & $getTag 'TeamPoc' 0
-                'TeamPoc_Tag2'            = & $getTag 'TeamPoc' 1
-                'TeamPoc_Tag3'            = & $getTag 'TeamPoc' 2
-                'TeamPoc_Tag4'            = & $getTag 'TeamPoc' 3
-                'Change_Number'           = $changeNumber
-                'vTPM'                    = $vtpm
-                'ResourcePool'            = if ($vm.ResourcePool) { $vm.ResourcePool.Name } else { '' }
-                'FolderName'              = if ($vm.Folder) {
-                    $folderPath = @()
-                    $f = $vm.Folder
-                    while ($f -and $f.Name -ne 'vm') {
-                        $folderPath += $f.Name
-                        $f = $f.Parent
-                    }
-                    [array]::Reverse($folderPath)
-                    $folderPath -join '/'
-                } else { '' }
-                'LastBackup'              = $lastBackup
+            }
+
+            # Add tag columns dynamically from config
+            foreach ($tagDef in $config.RequiredTags) {
+                for ($t = 0; $t -lt $tagDef.Columns; $t++) {
+                    $suffix = if ($tagDef.Columns -gt 1) { ($t + 1) } else { '' }
+                    $propName = "$($tagDef.Category)_Tag$suffix"
+                    $props[$propName] = & $getTag $tagDef.Category $t
+                }
+            }
+
+            # Add remaining properties after tags
+            $props['Change_Number'] = $changeNumber
+            $props['vTPM'] = $vtpm
+            $props['ResourcePool'] = if ($vm.ResourcePool) { $vm.ResourcePool.Name } else { '' }
+            $props['FolderName'] = if ($vm.Folder) {
+                $folderPath = @()
+                $f = $vm.Folder
+                while ($f -and $f.Name -ne 'vm') {
+                    $folderPath += $f.Name
+                    $f = $f.Parent
+                }
+                [array]::Reverse($folderPath)
+                $folderPath -join '/'
+            } else { '' }
+            $props['LastBackup'] = $lastBackup
+
+            [PSCustomObject]$props
+        }
+
+        # Store collected data
+        $vcInventory = @($inventoryData)
+        foreach ($item in $vcInventory) {
+            $allInventoryData.Add($item)
+        }
+        $perVCenterData[$vcName] = $vcInventory
+
+        Write-Host "  Collected $($vcInventory.Count) VM(s)." -ForegroundColor Green
+        $successCount++
+    }
+    catch {
+        Write-Warning "Failed to process vCenter '$vcName': $_"
+        $failCount++
+    }
+    finally {
+        if ($null -ne $connection) {
+            Write-Verbose "Disconnecting from $vcName"
+            Disconnect-VIServer -Server $connection -Confirm:$false -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+#endregion Collection Phase
+
+#region Build Workbook
+
+if ($allInventoryData.Count -eq 0) {
+    Write-Warning "No VM data collected from any vCenter. Skipping workbook creation."
+    Stop-Transcript
+    return
+}
+
+Write-Host "`nBuilding workbook with $($allInventoryData.Count) total VM(s)..." -ForegroundColor Cyan
+
+# Build tag column names for reference
+$tagColumnNames = [System.Collections.Generic.List[string]]::new()
+foreach ($tagDef in $config.RequiredTags) {
+    for ($t = 0; $t -lt $tagDef.Columns; $t++) {
+        $suffix = if ($tagDef.Columns -gt 1) { ($t + 1) } else { '' }
+        $tagColumnNames.Add("$($tagDef.Category)_Tag$suffix")
+    }
+}
+
+# Build filtered views
+$missingTagsData = foreach ($vm in $allInventoryData) {
+    $missingCategories = [System.Collections.Generic.List[string]]::new()
+    foreach ($tagDef in $config.RequiredTags) {
+        $allEmpty = $true
+        for ($t = 0; $t -lt $tagDef.Columns; $t++) {
+            $suffix = if ($tagDef.Columns -gt 1) { ($t + 1) } else { '' }
+            $propName = "$($tagDef.Category)_Tag$suffix"
+            if ($vm.$propName -ne '') {
+                $allEmpty = $false
+                break
             }
         }
+        if ($allEmpty) {
+            $missingCategories.Add($tagDef.Category)
+        }
+    }
+    if ($missingCategories.Count -gt 0) {
+        $vmCopy = $vm.PSObject.Copy()
+        $vmCopy | Add-Member -NotePropertyName 'MissingTagCategories' -NotePropertyValue ($missingCategories -join ', ') -Force
+        $vmCopy
+    }
+}
 
-        # Conditional formatting rules
-        $vmCfRules = @(
-            # Gray: Powered off VMs
-            New-ConditionalText -Text 'PoweredOff' -Range 'B:B' -BackgroundColor LightGray
-            # Red: Needs disk consolidation
-            New-ConditionalText -Text 'True' -Range 'J:J' -BackgroundColor Red -ConditionalTextColor White
-            # Yellow: VMTools not running or not installed
-            New-ConditionalText -Text 'toolsNotRunning' -Range 'P:P' -BackgroundColor Yellow
-            New-ConditionalText -Text 'toolsNotInstalled' -Range 'P:P' -BackgroundColor Red -ConditionalTextColor White
-            New-ConditionalText -Text 'toolsOld' -Range 'P:P' -BackgroundColor Yellow
-            # Yellow: CD connected
-            New-ConditionalText -Text 'True' -Range 'S:S' -BackgroundColor Yellow
-            # Yellow: Floppy drive present
-            New-ConditionalText -Text 'True' -Range 'G:G' -BackgroundColor Yellow
-            # Yellow: Old hardware versions (vmx-13 and below = pre-vSphere 6.7)
-            New-ConditionalText -Text 'vmx-07' -Range 'O:O' -BackgroundColor Orange -ConditionalTextColor White
-            New-ConditionalText -Text 'vmx-08' -Range 'O:O' -BackgroundColor Orange -ConditionalTextColor White
-            New-ConditionalText -Text 'vmx-09' -Range 'O:O' -BackgroundColor Orange -ConditionalTextColor White
-            New-ConditionalText -Text 'vmx-10' -Range 'O:O' -BackgroundColor Yellow
-            New-ConditionalText -Text 'vmx-11' -Range 'O:O' -BackgroundColor Yellow
-            New-ConditionalText -Text 'vmx-12' -Range 'O:O' -BackgroundColor Yellow
-            New-ConditionalText -Text 'vmx-13' -Range 'O:O' -BackgroundColor Yellow
-        )
+$vmBiosData = @($allInventoryData | Where-Object { $_.Firmware -eq 'bios' })
+$poweredOffData = @($allInventoryData | Where-Object { $_.PowerState -eq 'PoweredOff' })
 
-        # Export data to temp xlsx, then add Search tab and save as xlsm
-        $tempXlsx = Join-Path $OutputDir "VMInventory_$vcName.tmp.xlsx"
-        if (Test-Path $tempXlsx) { Remove-Item $tempXlsx -Force }
-        if (Test-Path $reportFile) { Remove-Item $reportFile -Force }
+# Conditional formatting rules (column letters will be set based on actual data)
+$vmCfRules = @(
+    # Gray: Powered off VMs
+    New-ConditionalText -Text 'PoweredOff' -Range 'B:B' -BackgroundColor LightGray
+    # Red: Needs disk consolidation
+    New-ConditionalText -Text 'True' -Range 'J:J' -BackgroundColor Red -ConditionalTextColor White
+    # Yellow: VMTools not running or not installed
+    New-ConditionalText -Text 'toolsNotRunning' -Range 'P:P' -BackgroundColor Yellow
+    New-ConditionalText -Text 'toolsNotInstalled' -Range 'P:P' -BackgroundColor Red -ConditionalTextColor White
+    New-ConditionalText -Text 'toolsOld' -Range 'P:P' -BackgroundColor Yellow
+    # Yellow: CD connected
+    New-ConditionalText -Text 'True' -Range 'S:S' -BackgroundColor Yellow
+    # Yellow: Floppy drive present
+    New-ConditionalText -Text 'True' -Range 'G:G' -BackgroundColor Yellow
+    # Yellow: Old hardware versions (vmx-13 and below = pre-vSphere 6.7)
+    New-ConditionalText -Text 'vmx-07' -Range 'O:O' -BackgroundColor Orange -ConditionalTextColor White
+    New-ConditionalText -Text 'vmx-08' -Range 'O:O' -BackgroundColor Orange -ConditionalTextColor White
+    New-ConditionalText -Text 'vmx-09' -Range 'O:O' -BackgroundColor Orange -ConditionalTextColor White
+    New-ConditionalText -Text 'vmx-10' -Range 'O:O' -BackgroundColor Yellow
+    New-ConditionalText -Text 'vmx-11' -Range 'O:O' -BackgroundColor Yellow
+    New-ConditionalText -Text 'vmx-12' -Range 'O:O' -BackgroundColor Yellow
+    New-ConditionalText -Text 'vmx-13' -Range 'O:O' -BackgroundColor Yellow
+)
 
-        $inventoryData | Export-Excel -Path $tempXlsx -WorksheetName 'VMInventory' `
+# Export All_VMs tab first (this creates the workbook)
+$tempXlsx = Join-Path $OutputDir 'VMInventory_All.tmp.xlsx'
+if (Test-Path $tempXlsx) { Remove-Item $tempXlsx -Force }
+if (Test-Path $reportFile) { Remove-Item $reportFile -Force }
+
+$allInventoryData | Export-Excel -Path $tempXlsx -WorksheetName 'All_VMs' `
+    -AutoSize -FreezeTopRow -BoldTopRow -ConditionalText $vmCfRules `
+    -TableName 'All_VMs' -TableStyle Medium6
+
+# Export additional data tabs to the same workbook
+if (@($missingTagsData).Count -gt 0) {
+    $missingTagsData | Export-Excel -Path $tempXlsx -WorksheetName 'MissingTags' `
+        -AutoSize -FreezeTopRow -BoldTopRow `
+        -TableName 'MissingTags' -TableStyle Medium6
+}
+else {
+    # Create empty sheet with header note
+    Export-Excel -Path $tempXlsx -WorksheetName 'MissingTags' -InputObject $null
+}
+
+if ($vmBiosData.Count -gt 0) {
+    $vmBiosData | Export-Excel -Path $tempXlsx -WorksheetName 'VM_BIOS' `
+        -AutoSize -FreezeTopRow -BoldTopRow -ConditionalText $vmCfRules `
+        -TableName 'VM_BIOS' -TableStyle Medium6
+}
+else {
+    Export-Excel -Path $tempXlsx -WorksheetName 'VM_BIOS' -InputObject $null
+}
+
+if ($poweredOffData.Count -gt 0) {
+    $poweredOffData | Export-Excel -Path $tempXlsx -WorksheetName 'VMs_Powered_Off' `
+        -AutoSize -FreezeTopRow -BoldTopRow -ConditionalText $vmCfRules `
+        -TableName 'VMs_Powered_Off' -TableStyle Medium6
+}
+else {
+    Export-Excel -Path $tempXlsx -WorksheetName 'VMs_Powered_Off' -InputObject $null
+}
+
+# Per-vCenter tabs
+foreach ($vcName in $perVCenterData.Keys) {
+    $vcData = $perVCenterData[$vcName]
+    # Sanitize vCenter name for worksheet name (max 31 chars, no special chars)
+    $tabName = $vcName -replace '[:\\/\?\*\[\]]', '_'
+    if ($tabName.Length -gt 31) { $tabName = $tabName.Substring(0, 31) }
+
+    if ($vcData.Count -gt 0) {
+        $vcData | Export-Excel -Path $tempXlsx -WorksheetName $tabName `
             -AutoSize -FreezeTopRow -BoldTopRow -ConditionalText $vmCfRules `
-            -TableName 'VMInventory' -TableStyle Medium6
+            -TableName ($tabName -replace '[^A-Za-z0-9_]', '_') -TableStyle Medium6
+    }
+    else {
+        Export-Excel -Path $tempXlsx -WorksheetName $tabName -InputObject $null
+    }
+}
 
-        # Add Search tab with input box and Go button
-        $pkg = Open-ExcelPackage $tempXlsx
+#endregion Build Workbook
 
-        # Resolve EPPlus enum values at runtime (search by short name to handle namespace changes across versions)
-        $epAsm = $pkg.GetType().Assembly
-        $epTypes = $epAsm.GetExportedTypes()
-        $findType = { param([string]$Name) $epTypes | Where-Object { $_.Name -eq $Name } | Select-Object -First 1 }
+#region Search Tab + VBA
 
-        $borderThin     = [Enum]::Parse((& $findType 'ExcelBorderStyle'), 'Thin')
-        $fillSolid      = [Enum]::Parse((& $findType 'ExcelFillStyle'), 'Solid')
-        $shapeRoundRect = [Enum]::Parse((& $findType 'eShapeStyle'), 'RoundRect')
-        $textCenter     = [Enum]::Parse((& $findType 'eTextAlignment'), 'Center')
-        $fillSolidFill  = [Enum]::Parse((& $findType 'eFillStyle'), 'SolidFill')
-        $dataWs = $pkg.Workbook.Worksheets['VMInventory']
-        $searchWs = $pkg.Workbook.Worksheets.Add('Search')
-        $pkg.Workbook.Worksheets.MoveToStart('Search')
+# Open the workbook and add the Search tab with VBA
+$pkg = Open-ExcelPackage $tempXlsx
 
-        # Build the Search tab layout
-        $searchWs.Cells[1, 1].Value = 'VM Inventory - Search & New Entry'
-        $searchWs.Cells[1, 1].Style.Font.Bold = $true
-        $searchWs.Cells[1, 1].Style.Font.Size = 16
-        $searchWs.Cells[1, 1].Style.Font.Color.SetColor([System.Drawing.Color]::FromArgb(68, 114, 196))
+# Resolve EPPlus enum values at runtime
+$epAsm = $pkg.GetType().Assembly
+$epTypes = $epAsm.GetExportedTypes()
+$findType = { param([string]$Name) $epTypes | Where-Object { $_.Name -eq $Name } | Select-Object -First 1 }
 
-        $searchWs.Cells[3, 1].Value = 'Enter search term:'
-        $searchWs.Cells[3, 1].Style.Font.Bold = $true
-        $searchWs.Cells[3, 1].Style.Font.Size = 11
+$borderThin     = [Enum]::Parse((& $findType 'ExcelBorderStyle'), 'Thin')
+$fillSolid      = [Enum]::Parse((& $findType 'ExcelFillStyle'), 'Solid')
+$shapeRoundRect = [Enum]::Parse((& $findType 'eShapeStyle'), 'RoundRect')
+$textCenter     = [Enum]::Parse((& $findType 'eTextAlignment'), 'Center')
+$fillSolidFill  = [Enum]::Parse((& $findType 'eFillStyle'), 'SolidFill')
 
-        # Style the search input cell B3
-        $searchWs.Cells[3, 2].Style.Font.Size = 11
-        $searchWs.Cells[3, 2].Style.Border.Top.Style = $borderThin
-        $searchWs.Cells[3, 2].Style.Border.Bottom.Style = $borderThin
-        $searchWs.Cells[3, 2].Style.Border.Left.Style = $borderThin
-        $searchWs.Cells[3, 2].Style.Border.Right.Style = $borderThin
-        $searchWs.Column(2).Width = 40
+$dataWs = $pkg.Workbook.Worksheets['All_VMs']
+$searchWs = $pkg.Workbook.Worksheets.Add('Search')
+$pkg.Workbook.Worksheets.MoveToStart('Search')
 
-        # Column widths
-        $searchWs.Column(1).Width = 20
+# Build the Search tab layout
+$searchWs.Cells[1, 1].Value = 'VM Inventory - Search & New Entry'
+$searchWs.Cells[1, 1].Style.Font.Bold = $true
+$searchWs.Cells[1, 1].Style.Font.Size = 16
+$searchWs.Cells[1, 1].Style.Font.Color.SetColor([System.Drawing.Color]::FromArgb(68, 114, 196))
 
-        # Copy headers to row 5
-        $lastCol = $dataWs.Dimension.End.Column
-        for ($c = 1; $c -le $lastCol; $c++) {
-            $searchWs.Cells[5, $c].Value = $dataWs.Cells[1, $c].Value
-            $searchWs.Cells[5, $c].Style.Font.Bold = $true
-            $searchWs.Cells[5, $c].Style.Fill.PatternType = $fillSolid
-            $searchWs.Cells[5, $c].Style.Fill.BackgroundColor.SetColor([System.Drawing.Color]::FromArgb(68, 114, 196))
-            $searchWs.Cells[5, $c].Style.Font.Color.SetColor([System.Drawing.Color]::White)
-        }
+$searchWs.Cells[3, 1].Value = 'Enter search term:'
+$searchWs.Cells[3, 1].Style.Font.Bold = $true
+$searchWs.Cells[3, 1].Style.Font.Size = 11
 
-        # Row 6: New entry input row (light green background with borders)
-        $lightGreen = [System.Drawing.Color]::FromArgb(226, 239, 218)
-        for ($c = 1; $c -le $lastCol; $c++) {
-            $searchWs.Cells[6, $c].Style.Fill.PatternType = $fillSolid
-            $searchWs.Cells[6, $c].Style.Fill.BackgroundColor.SetColor($lightGreen)
-            $searchWs.Cells[6, $c].Style.Border.Top.Style = $borderThin
-            $searchWs.Cells[6, $c].Style.Border.Bottom.Style = $borderThin
-            $searchWs.Cells[6, $c].Style.Border.Left.Style = $borderThin
-            $searchWs.Cells[6, $c].Style.Border.Right.Style = $borderThin
-        }
+# Style the search input cell B3
+$searchWs.Cells[3, 2].Style.Font.Size = 11
+$searchWs.Cells[3, 2].Style.Border.Top.Style = $borderThin
+$searchWs.Cells[3, 2].Style.Border.Bottom.Style = $borderThin
+$searchWs.Cells[3, 2].Style.Border.Left.Style = $borderThin
+$searchWs.Cells[3, 2].Style.Border.Right.Style = $borderThin
+$searchWs.Column(2).Width = 40
 
-        # Freeze panes below the input row
-        $searchWs.View.FreezePanes(7, 1)
+# Column widths
+$searchWs.Column(1).Width = 20
 
-        # Row 7: separator label for search results
-        $searchWs.Cells[7, 1].Value = 'Search Results:'
-        $searchWs.Cells[7, 1].Style.Font.Bold = $true
-        $searchWs.Cells[7, 1].Style.Font.Size = 10
-        $searchWs.Cells[7, 1].Style.Font.Color.SetColor([System.Drawing.Color]::Gray)
+# Copy headers to row 5
+$lastCol = $dataWs.Dimension.End.Column
+for ($c = 1; $c -le $lastCol; $c++) {
+    $searchWs.Cells[5, $c].Value = $dataWs.Cells[1, $c].Value
+    $searchWs.Cells[5, $c].Style.Font.Bold = $true
+    $searchWs.Cells[5, $c].Style.Fill.PatternType = $fillSolid
+    $searchWs.Cells[5, $c].Style.Fill.BackgroundColor.SetColor([System.Drawing.Color]::FromArgb(68, 114, 196))
+    $searchWs.Cells[5, $c].Style.Font.Color.SetColor([System.Drawing.Color]::White)
+}
 
-        # Add Go button (search)
-        $goButton = $searchWs.Drawings.AddShape('GoButton', $shapeRoundRect)
-        $goButton.SetPosition(2, 0, 2, 0)
-        $goButton.SetSize(80, 30)
-        $goButton.Text = 'Search'
-        $goButton.TextAlignment = $textCenter
-        $goButton.Fill.Style = $fillSolidFill
-        $goButton.Fill.Color = [System.Drawing.Color]::FromArgb(68, 114, 196)
-        $goButton.Font.Color = [System.Drawing.Color]::White
-        $goButton.Font.Bold = $true
-        $goButton.Font.Size = 11
+# Row 6: New entry input row (light green background with borders)
+$lightGreen = [System.Drawing.Color]::FromArgb(226, 239, 218)
+for ($c = 1; $c -le $lastCol; $c++) {
+    $searchWs.Cells[6, $c].Style.Fill.PatternType = $fillSolid
+    $searchWs.Cells[6, $c].Style.Fill.BackgroundColor.SetColor($lightGreen)
+    $searchWs.Cells[6, $c].Style.Border.Top.Style = $borderThin
+    $searchWs.Cells[6, $c].Style.Border.Bottom.Style = $borderThin
+    $searchWs.Cells[6, $c].Style.Border.Left.Style = $borderThin
+    $searchWs.Cells[6, $c].Style.Border.Right.Style = $borderThin
+}
 
-        # Add Entry button (green, next to Go)
-        $addButton = $searchWs.Drawings.AddShape('AddEntryButton', $shapeRoundRect)
-        $addButton.SetPosition(2, 0, 3, 20)
-        $addButton.SetSize(100, 30)
-        $addButton.Text = 'Add Entry'
-        $addButton.TextAlignment = $textCenter
-        $addButton.Fill.Style = $fillSolidFill
-        $addButton.Fill.Color = [System.Drawing.Color]::FromArgb(112, 173, 71)
-        $addButton.Font.Color = [System.Drawing.Color]::White
-        $addButton.Font.Bold = $true
-        $addButton.Font.Size = 11
+# Freeze panes below the input row
+$searchWs.View.FreezePanes(7, 1)
 
-        # VBA project
-        $pkg.Workbook.CreateVBAProject()
+# Row 7: separator label for search results
+$searchWs.Cells[7, 1].Value = 'Search Results:'
+$searchWs.Cells[7, 1].Style.Font.Bold = $true
+$searchWs.Cells[7, 1].Style.Font.Size = 10
+$searchWs.Cells[7, 1].Style.Font.Color.SetColor([System.Drawing.Color]::Gray)
 
-        # Assign macros via Workbook_Open (compatible with all EPPlus versions)
-        $pkg.Workbook.CodeModule.Code = @"
+# Add Go button (search)
+$goButton = $searchWs.Drawings.AddShape('GoButton', $shapeRoundRect)
+$goButton.SetPosition(2, 0, 2, 0)
+$goButton.SetSize(80, 30)
+$goButton.Text = 'Search'
+$goButton.TextAlignment = $textCenter
+$goButton.Fill.Style = $fillSolidFill
+$goButton.Fill.Color = [System.Drawing.Color]::FromArgb(68, 114, 196)
+$goButton.Font.Color = [System.Drawing.Color]::White
+$goButton.Font.Bold = $true
+$goButton.Font.Size = 11
+
+# Add Entry button (green, next to Go)
+$addButton = $searchWs.Drawings.AddShape('AddEntryButton', $shapeRoundRect)
+$addButton.SetPosition(2, 0, 3, 20)
+$addButton.SetSize(100, 30)
+$addButton.Text = 'Add Entry'
+$addButton.TextAlignment = $textCenter
+$addButton.Fill.Style = $fillSolidFill
+$addButton.Fill.Color = [System.Drawing.Color]::FromArgb(112, 173, 71)
+$addButton.Font.Color = [System.Drawing.Color]::White
+$addButton.Font.Bold = $true
+$addButton.Font.Size = 11
+
+# VBA project
+$pkg.Workbook.CreateVBAProject()
+
+# Assign macros via Workbook_Open
+$pkg.Workbook.CodeModule.Code = @"
 Private Sub Workbook_Open()
     Dim ws As Worksheet
     Set ws = ThisWorkbook.Worksheets("Search")
@@ -487,14 +620,14 @@ Private Sub Workbook_Open()
 End Sub
 "@
 
-        # Add VBA module with search and add entry logic
-        $vbaModule = $pkg.Workbook.VbaProject.Modules.AddModule('SearchModule')
-        $vbaModule.Code = @"
+# Add VBA module with search and add entry logic
+$vbaModule = $pkg.Workbook.VbaProject.Modules.AddModule('SearchModule')
+$vbaModule.Code = @"
 Public Sub RunSearch()
     Dim searchWs As Worksheet
     Dim dataWs As Worksheet
     Set searchWs = ThisWorkbook.Worksheets("Search")
-    Set dataWs = ThisWorkbook.Worksheets("VMInventory")
+    Set dataWs = ThisWorkbook.Worksheets("All_VMs")
 
     Dim searchVal As String
     searchVal = LCase(Trim(searchWs.Range("B3").Value))
@@ -516,7 +649,7 @@ Public Sub RunSearch()
 
     ' Search the data table
     Dim tbl As ListObject
-    Set tbl = dataWs.ListObjects("VMInventory")
+    Set tbl = dataWs.ListObjects("All_VMs")
     Dim lastCol As Long
     lastCol = tbl.ListColumns.Count
 
@@ -561,7 +694,7 @@ Public Sub AddEntry()
     Dim searchWs As Worksheet
     Dim dataWs As Worksheet
     Set searchWs = ThisWorkbook.Worksheets("Search")
-    Set dataWs = ThisWorkbook.Worksheets("VMInventory")
+    Set dataWs = ThisWorkbook.Worksheets("All_VMs")
 
     ' Check that at least the Name field (column 1) has a value
     If Trim(searchWs.Cells(6, 1).Value) = "" Then
@@ -573,7 +706,7 @@ Public Sub AddEntry()
 
     ' Get the data table and add a new row
     Dim tbl As ListObject
-    Set tbl = dataWs.ListObjects("VMInventory")
+    Set tbl = dataWs.ListObjects("All_VMs")
     Dim lastCol As Long
     lastCol = tbl.ListColumns.Count
 
@@ -597,24 +730,23 @@ Public Sub AddEntry()
 End Sub
 "@
 
-        Close-ExcelPackage $pkg -SaveAs $reportFile
-        Remove-Item $tempXlsx -Force -ErrorAction SilentlyContinue
-        Write-Host "  Collected $(@($inventoryData).Count) VM(s)." -ForegroundColor Green
-        $successCount++
-    }
-    catch {
-        Write-Warning "Failed to process vCenter '$vcName': $_"
-        $failCount++
-    }
-    finally {
-        if ($null -ne $connection) {
-            Write-Verbose "Disconnecting from $vcName"
-            Disconnect-VIServer -Server $connection -Confirm:$false -ErrorAction SilentlyContinue
-        }
-    }
+Close-ExcelPackage $pkg -SaveAs $reportFile
+Remove-Item $tempXlsx -Force -ErrorAction SilentlyContinue
+
+Write-Host "  Workbook saved: $reportFile" -ForegroundColor Green
+
+# Report tab summary
+Write-Host "`n  Tabs created:" -ForegroundColor Cyan
+Write-Host "    Search           : Search & Add Entry UI" -ForegroundColor Gray
+Write-Host "    All_VMs          : $($allInventoryData.Count) VM(s)" -ForegroundColor Gray
+Write-Host "    MissingTags      : $(@($missingTagsData).Count) VM(s)" -ForegroundColor Gray
+Write-Host "    VM_BIOS          : $($vmBiosData.Count) VM(s)" -ForegroundColor Gray
+Write-Host "    VMs_Powered_Off  : $($poweredOffData.Count) VM(s)" -ForegroundColor Gray
+foreach ($vcName in $perVCenterData.Keys) {
+    Write-Host "    $vcName : $($perVCenterData[$vcName].Count) VM(s)" -ForegroundColor Gray
 }
 
-#endregion Main Loop
+#endregion Search Tab + VBA
 
 #region Summary
 

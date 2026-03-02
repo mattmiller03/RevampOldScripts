@@ -9,34 +9,60 @@ This repo contains VMware PowerCLI PowerShell scripts for collecting vSphere inv
 ## Repository Structure
 
 ```
-config/vcenters.json           # vCenter list + SecretManagement vault/secret names
-Initialize-VCenterSecrets.ps1  # One-time setup: creates vault and stores credentials
-Get-AllHostInventory.ps1       # Revamped: ESX host inventory collection
-Get-AllVMInventory.ps1         # Revamped: VM inventory collection
-Get_All_Host_Inventory.ps1     # Legacy (reference only)
-Get_All_VM_Inventory.ps1       # Legacy (reference only)
+config/vcenters.json              # vCenter list, credential paths, required tag categories
+config/credentials/*.cred.xml     # DPAPI-encrypted credential files (per-user, per-machine)
+Initialize-VCenterCredentials.ps1 # One-time setup: prompts for credentials and saves .cred.xml files
+Get-AllHostInventory.ps1          # Revamped: ESX host inventory collection (per-vCenter .xlsm)
+Get-AllVMInventory.ps1            # Revamped: VM inventory collection (single multi-tab .xlsm)
+Get_All_Host_Inventory.ps1        # Legacy (reference only)
+Get_All_VM_Inventory.ps1          # Legacy (reference only)
 ```
 
 ## Setup
 
-1. Install modules: `Install-Module VMware.PowerCLI, Microsoft.PowerShell.SecretManagement, Microsoft.PowerShell.SecretStore`
-2. Edit `config/vcenters.json` with your vCenter servers and desired secret names
-3. Run `.\Initialize-VCenterSecrets.ps1` interactively as the service account — prompts for credentials per vCenter and stores them encrypted in a SecretStore vault
+1. Install modules: `Install-Module VMware.PowerCLI, ImportExcel`
+2. Edit `config/vcenters.json` with your vCenter servers, credential filenames, and required tag categories
+3. Run `.\Initialize-VCenterCredentials.ps1` interactively as the service account — prompts for credentials per vCenter and saves DPAPI-encrypted .cred.xml files
 4. Schedule `Get-AllHostInventory.ps1` and/or `Get-AllVMInventory.ps1` via Task Scheduler
 
 ## Architecture
 
-Both inventory scripts share the same pattern:
+### Credential Storage
+Credentials are stored as DPAPI-encrypted XML files via PowerShell's `Export-Clixml` / `Import-Clixml`. No extra modules required — encryption is tied to the current Windows user account and machine. The `config/credentials/` directory holds one `.cred.xml` file per vCenter.
+
+### Host Inventory (Get-AllHostInventory.ps1)
+- Produces one `.xlsm` workbook per vCenter with Search tab and HostInventory data tab
+- Same collect/export pattern as before
+
+### VM Inventory (Get-AllVMInventory.ps1)
+- Produces a **single** `VMInventory_All.xlsm` workbook with multiple tabs:
+  - **Search** — VBA-powered search UI with Add Entry functionality (searches All_VMs table)
+  - **All_VMs** — Combined VM inventory from all vCenters
+  - **MissingTags** — VMs missing any required tag category (configured in JSON)
+  - **VM_BIOS** — VMs using BIOS firmware (not EFI)
+  - **VMs_Powered_Off** — VMs in PoweredOff state
+  - **\<vCenter name\>** — One tab per vCenter with that vCenter's VMs
+
+### Tag Configuration
+Tag categories and column counts are driven by `RequiredTags` in `config/vcenters.json`:
+```json
+"RequiredTags": [
+    { "Category": "Application", "Columns": 2 },
+    { "Category": "VlanID", "Columns": 4 }
+]
+```
+Tag columns are built dynamically on each VM object (e.g., `Application_Tag1`, `Application_Tag2`). A VM appears on the MissingTags tab if **any** required tag category has all its columns blank.
+
+### Shared Patterns
+Both inventory scripts share:
 - `[CmdletBinding()]` with `param()` block — all paths configurable, defaults relative to `$PSScriptRoot`
 - Config loaded from JSON (`config/vcenters.json`) via `ConvertFrom-Json`
-- Credentials retrieved from SecretManagement vault as `[PSCredential]` objects
-- `Backup-PreviousReport` function archives prior CSV before each run (distinct source/archive paths)
-- `try/catch/finally` per vCenter: connect, collect inventory, save CSV, disconnect
+- Credentials loaded via `Import-Clixml` from `config/credentials/`
+- `Backup-PreviousReport` function archives prior workbook before each run
+- `try/catch/finally` per vCenter: connect, collect inventory, disconnect
 - Connection object captured from `Connect-VIServer` and disconnected specifically (no wildcard `*`)
 - Timestamped transcripts written to `Output/Transcripts/`
 - Summary at end: success/fail counts, duration
-
-The inventory collection blocks are currently **stubbed with TODO placeholders** — replace with your actual `Get-VMHost` / `Get-VM` pipeline logic.
 
 ## Conventions
 
