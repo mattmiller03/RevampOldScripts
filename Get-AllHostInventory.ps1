@@ -2,12 +2,16 @@
 
 <#
 .SYNOPSIS
-    Collects ESX host inventory from all vCenters defined in the configuration file.
+    Collects ESX host inventory from all vCenters and produces a single combined workbook.
 
 .DESCRIPTION
     Iterates through each vCenter server listed in config/vcenters.json, connects using
     DPAPI-encrypted credentials (created by Initialize-VCenterCredentials.ps1), collects
-    host inventory, and saves the results as per-vCenter Excel files.
+    host inventory, and produces a single Excel workbook with multiple tabs:
+
+      - Search    : Search UI with VBA macro (searches All_Hosts table)
+      - All_Hosts : Combined host inventory from all vCenters
+      - <vCenter> : One tab per vCenter with that vCenter's hosts
 
     Previous inventory files are archived before new ones are created.
 
@@ -17,10 +21,10 @@
     Path to the JSON configuration file. Defaults to config/vcenters.json.
 
 .PARAMETER OutputDir
-    Directory where inventory CSV files are written. Created if it does not exist.
+    Directory where the inventory workbook is written. Created if it does not exist.
 
 .PARAMETER ArchiveDir
-    Directory where previous inventory files are moved before a new run. Created if it does not exist.
+    Directory where the previous workbook is moved before a new run. Created if it does not exist.
 
 .PARAMETER TranscriptDir
     Directory for transcript log files. Created if it does not exist.
@@ -137,6 +141,13 @@ $config = Get-Content -Path $ConfigFile -Raw | ConvertFrom-Json
 $credDir = Join-Path $PSScriptRoot $config.CredentialDir
 Write-Host "Loaded $($config.VCenters.Count) vCenter(s) from config." -ForegroundColor Cyan
 
+# Output file paths
+$reportFile = Join-Path $OutputDir 'HostInventory_All.xlsm'
+$archiveFile = Join-Path $ArchiveDir 'HostInventory_All.xlsm'
+
+# Archive previous report
+Backup-PreviousReport -SourcePath $reportFile -ArchivePath $archiveFile
+
 #endregion Initialization
 
 #region Main Loop
@@ -144,19 +155,15 @@ Write-Host "Loaded $($config.VCenters.Count) vCenter(s) from config." -Foregroun
 $successCount = 0
 $failCount = 0
 
+$allHostsData = [System.Collections.Generic.List[PSCustomObject]]::new()
+$perVCenterData = [ordered]@{}
+
 foreach ($vc in $config.VCenters) {
     $vcName = $vc.Name
     $vcAlias = if ($vc.Alias) { $vc.Alias } else { $vcName.Split('.')[0] }
     Write-Host "`nProcessing vCenter: $vcAlias ($vcName)" -ForegroundColor Cyan
 
-    $reportFile = Join-Path $OutputDir "ESX_HostInventory_$vcAlias.xlsm"
-    $archiveFile = Join-Path $ArchiveDir "ESX_HostInventory_$vcAlias.xlsm"
-
-    # Archive previous report
-    Backup-PreviousReport -SourcePath $reportFile -ArchivePath $archiveFile
-
     $connection = $null
-    $pkg = $null
     try {
         # Retrieve credential from DPAPI-encrypted file
         $credPath = Join-Path $credDir $vc.CredentialFile
@@ -177,7 +184,7 @@ foreach ($vc in $config.VCenters) {
         Write-Verbose "  Found $($vmHosts.Count) host(s) on $vcName"
 
         $vcVersion = $connection.Version
-        $inventoryData = foreach ($vmHost in $vmHosts) {
+        $vcInventory = foreach ($vmHost in $vmHosts) {
             Write-Verbose "    Processing host: $($vmHost.Name)"
             $hostView = Get-View -VIObject $vmHost -Property Config, Hardware, Runtime, Summary, Network
             $services = Get-VMHostService -VMHost $vmHost -ErrorAction SilentlyContinue
@@ -348,118 +355,162 @@ foreach ($vc in $config.VCenters) {
             }
         }
 
-        # Conditional formatting rules
-        $hostCfRules = @(
-            # Red: SSH enabled
-            New-ConditionalText -Text 'True' -Range 'AF:AF' -BackgroundColor Red -ConditionalTextColor White
-            # Red: ESXi Shell enabled
-            New-ConditionalText -Text 'True' -Range 'AE:AE' -BackgroundColor Red -ConditionalTextColor White
-            # Red: Disconnected or NotResponding
-            New-ConditionalText -Text 'Disconnected' -Range 'AC:AC' -BackgroundColor Red -ConditionalTextColor White
-            New-ConditionalText -Text 'NotResponding' -Range 'AC:AC' -BackgroundColor Red -ConditionalTextColor White
-            # Red: ConnectionState issues
-            New-ConditionalText -Text 'Disconnected' -Range 'AQ:AQ' -BackgroundColor Red -ConditionalTextColor White
-            New-ConditionalText -Text 'NotResponding' -Range 'AQ:AQ' -BackgroundColor Red -ConditionalTextColor White
-            # Yellow: PowerState not PoweredOn
-            New-ConditionalText -Text 'Standby' -Range 'F:F' -BackgroundColor Yellow
-            New-ConditionalText -Text 'PoweredOff' -Range 'F:F' -BackgroundColor Yellow
-            # Yellow: Maintenance mode
-            New-ConditionalText -Text 'Maintenance' -Range 'AC:AC' -BackgroundColor Yellow
-        )
+        # Accumulate results
+        foreach ($row in $vcInventory) { $allHostsData.Add($row) }
+        $perVCenterData[$vcAlias] = @($vcInventory)
 
-        # Guard: skip workbook creation if no hosts were collected
-        if (-not $inventoryData) {
-            Write-Warning "  No hosts collected for '$vcAlias' — skipping workbook creation."
-            $successCount++
-            continue
+        Write-Host "  Collected $(@($vcInventory).Count) host(s)." -ForegroundColor Green
+        $successCount++
+    }
+    catch {
+        Write-Warning "Failed to process vCenter '$vcName': $_"
+        $failCount++
+    }
+    finally {
+        if ($null -ne $connection) {
+            Write-Verbose "Disconnecting from $vcName"
+            Disconnect-VIServer -Server $connection -Confirm:$false -ErrorAction SilentlyContinue
         }
+    }
+}
 
-        # Export directly to xlsm (single-sheet — no temp file required)
-        if (Test-Path $reportFile) { Remove-Item $reportFile -Force }
+#endregion Main Loop
 
-        $inventoryData | Export-Excel -Path $reportFile -WorksheetName 'HostInventory' `
+#region Build Workbook
+
+Write-Host "`nBuilding combined workbook..." -ForegroundColor Cyan
+
+# Conditional formatting rules
+$hostCfRules = @(
+    # Red: SSH enabled
+    New-ConditionalText -Text 'True' -Range 'AF:AF' -BackgroundColor Red -ConditionalTextColor White
+    # Red: ESXi Shell enabled
+    New-ConditionalText -Text 'True' -Range 'AE:AE' -BackgroundColor Red -ConditionalTextColor White
+    # Red: Disconnected or NotResponding
+    New-ConditionalText -Text 'Disconnected' -Range 'AC:AC' -BackgroundColor Red -ConditionalTextColor White
+    New-ConditionalText -Text 'NotResponding' -Range 'AC:AC' -BackgroundColor Red -ConditionalTextColor White
+    # Red: ConnectionState issues
+    New-ConditionalText -Text 'Disconnected' -Range 'AQ:AQ' -BackgroundColor Red -ConditionalTextColor White
+    New-ConditionalText -Text 'NotResponding' -Range 'AQ:AQ' -BackgroundColor Red -ConditionalTextColor White
+    # Yellow: PowerState not PoweredOn
+    New-ConditionalText -Text 'Standby' -Range 'F:F' -BackgroundColor Yellow
+    New-ConditionalText -Text 'PoweredOff' -Range 'F:F' -BackgroundColor Yellow
+    # Yellow: Maintenance mode
+    New-ConditionalText -Text 'Maintenance' -Range 'AC:AC' -BackgroundColor Yellow
+)
+
+# Temp xlsm accumulates all sheets before the Search tab is added
+$tempXlsm = Join-Path $OutputDir 'HostInventory_All.tmp.xlsm'
+if (Test-Path $tempXlsm) { Remove-Item $tempXlsm -Force }
+
+# All_Hosts tab (combined)
+if ($allHostsData.Count -gt 0) {
+    $allHostsData | Export-Excel -Path $tempXlsm -WorksheetName 'All_Hosts' `
+        -AutoSize -FreezeTopRow -BoldTopRow -ConditionalText $hostCfRules `
+        -TableName 'All_Hosts' -TableStyle Medium9
+}
+else {
+    Export-Excel -Path $tempXlsm -WorksheetName 'All_Hosts' -InputObject $null
+}
+
+# Per-vCenter tabs
+foreach ($alias in $perVCenterData.Keys) {
+    $vcData = $perVCenterData[$alias]
+    $tabName = $alias -replace '[:\\/\?\*\[\]]', '_'
+    if ($tabName.Length -gt 31) { $tabName = $tabName.Substring(0, 31) }
+
+    if ($vcData.Count -gt 0) {
+        $vcData | Export-Excel -Path $tempXlsm -WorksheetName $tabName `
             -AutoSize -FreezeTopRow -BoldTopRow -ConditionalText $hostCfRules `
-            -TableName 'HostInventory' -TableStyle Medium6
+            -TableName ($tabName -replace '[^A-Za-z0-9_]', '_') -TableStyle Medium9
+    }
+    else {
+        Export-Excel -Path $tempXlsm -WorksheetName $tabName -InputObject $null
+    }
+}
 
-        # Add Search tab with input box and Go button
-        $pkg = Open-ExcelPackage $reportFile
+# Open workbook and add Search tab with VBA
+$pkg = $null
+try {
+    $pkg = Open-ExcelPackage $tempXlsm
 
-        # Resolve EPPlus enum values at runtime (search by short name to handle namespace changes across versions)
-        $epAsm = $pkg.GetType().Assembly
-        $epTypes = $epAsm.GetExportedTypes()
-        $findType = { param([string]$Name) $epTypes | Where-Object { $_.Name -eq $Name } | Select-Object -First 1 }
+    # Resolve EPPlus enum values at runtime (search by short name to handle namespace changes across versions)
+    $epAsm = $pkg.GetType().Assembly
+    $epTypes = $epAsm.GetExportedTypes()
+    $findType = { param([string]$Name) $epTypes | Where-Object { $_.Name -eq $Name } | Select-Object -First 1 }
 
-        $borderThin     = [Enum]::Parse((& $findType 'ExcelBorderStyle'), 'Thin')
-        $fillSolid      = [Enum]::Parse((& $findType 'ExcelFillStyle'), 'Solid')
-        $shapeRoundRect = [Enum]::Parse((& $findType 'eShapeStyle'), 'RoundRect')
-        $textCenter     = [Enum]::Parse((& $findType 'eTextAlignment'), 'Center')
-        $fillSolidFill  = [Enum]::Parse((& $findType 'eFillStyle'), 'SolidFill')
-        $dataWs = $pkg.Workbook.Worksheets['HostInventory']
-        $searchWs = $pkg.Workbook.Worksheets.Add('Search')
-        $pkg.Workbook.Worksheets.MoveToStart('Search')
+    $borderThin     = [Enum]::Parse((& $findType 'ExcelBorderStyle'), 'Thin')
+    $fillSolid      = [Enum]::Parse((& $findType 'ExcelFillStyle'), 'Solid')
+    $shapeRoundRect = [Enum]::Parse((& $findType 'eShapeStyle'), 'RoundRect')
+    $textCenter     = [Enum]::Parse((& $findType 'eTextAlignment'), 'Center')
+    $fillSolidFill  = [Enum]::Parse((& $findType 'eFillStyle'), 'SolidFill')
 
-        # Build the Search tab layout
-        $searchWs.Cells[1, 1].Value = 'Host Inventory Search'
-        $searchWs.Cells[1, 1].Style.Font.Bold = $true
-        $searchWs.Cells[1, 1].Style.Font.Size = 16
-        $searchWs.Cells[1, 1].Style.Font.Color.SetColor([System.Drawing.Color]::FromArgb(68, 114, 196))
+    $dataWs = $pkg.Workbook.Worksheets['All_Hosts']
+    $searchWs = $pkg.Workbook.Worksheets.Add('Search')
+    $pkg.Workbook.Worksheets.MoveToStart('Search')
 
-        $searchWs.Cells[3, 1].Value = 'Enter search term:'
-        $searchWs.Cells[3, 1].Style.Font.Bold = $true
-        $searchWs.Cells[3, 1].Style.Font.Size = 11
+    # Build the Search tab layout
+    $searchWs.Cells[1, 1].Value = 'Host Inventory Search'
+    $searchWs.Cells[1, 1].Style.Font.Bold = $true
+    $searchWs.Cells[1, 1].Style.Font.Size = 16
+    $searchWs.Cells[1, 1].Style.Font.Color.SetColor([System.Drawing.Color]::FromArgb(68, 114, 196))
 
-        # Style the input cell B3
-        $searchWs.Cells[3, 2].Style.Font.Size = 11
-        $searchWs.Cells[3, 2].Style.Border.Top.Style = $borderThin
-        $searchWs.Cells[3, 2].Style.Border.Bottom.Style = $borderThin
-        $searchWs.Cells[3, 2].Style.Border.Left.Style = $borderThin
-        $searchWs.Cells[3, 2].Style.Border.Right.Style = $borderThin
-        $searchWs.Column(2).Width = 40
+    $searchWs.Cells[3, 1].Value = 'Enter search term:'
+    $searchWs.Cells[3, 1].Style.Font.Bold = $true
+    $searchWs.Cells[3, 1].Style.Font.Size = 11
 
-        # Column widths
-        $searchWs.Column(1).Width = 20
+    # Style the input cell B3
+    $searchWs.Cells[3, 2].Style.Font.Size = 11
+    $searchWs.Cells[3, 2].Style.Border.Top.Style = $borderThin
+    $searchWs.Cells[3, 2].Style.Border.Bottom.Style = $borderThin
+    $searchWs.Cells[3, 2].Style.Border.Left.Style = $borderThin
+    $searchWs.Cells[3, 2].Style.Border.Right.Style = $borderThin
+    $searchWs.Column(2).Width = 40
 
-        # Copy headers to row 5 for results
-        $lastCol = $dataWs.Dimension.End.Column
-        for ($c = 1; $c -le $lastCol; $c++) {
-            $searchWs.Cells[5, $c].Value = $dataWs.Cells[1, $c].Value
-            $searchWs.Cells[5, $c].Style.Font.Bold = $true
-            $searchWs.Cells[5, $c].Style.Fill.PatternType = $fillSolid
-            $searchWs.Cells[5, $c].Style.Fill.BackgroundColor.SetColor([System.Drawing.Color]::FromArgb(68, 114, 196))
-            $searchWs.Cells[5, $c].Style.Font.Color.SetColor([System.Drawing.Color]::White)
-        }
-        $searchWs.View.FreezePanes(6, 1)
+    # Column widths
+    $searchWs.Column(1).Width = 20
 
-        # Add Go button as a shape
-        $button = $searchWs.Drawings.AddShape('GoButton', $shapeRoundRect)
-        $button.SetPosition(2, 0, 2, 0)
-        $button.SetSize(80, 30)
-        $button.Text = 'Go'
-        $button.TextAlignment = $textCenter
-        $button.Fill.Style = $fillSolidFill
-        $button.Fill.Color = [System.Drawing.Color]::FromArgb(68, 114, 196)
-        $button.Font.Color = [System.Drawing.Color]::White
-        $button.Font.Bold = $true
-        $button.Font.Size = 11
+    # Copy headers to row 5 for results
+    $lastCol = $dataWs.Dimension.End.Column
+    for ($c = 1; $c -le $lastCol; $c++) {
+        $searchWs.Cells[5, $c].Value = $dataWs.Cells[1, $c].Value
+        $searchWs.Cells[5, $c].Style.Font.Bold = $true
+        $searchWs.Cells[5, $c].Style.Fill.PatternType = $fillSolid
+        $searchWs.Cells[5, $c].Style.Fill.BackgroundColor.SetColor([System.Drawing.Color]::FromArgb(68, 114, 196))
+        $searchWs.Cells[5, $c].Style.Font.Color.SetColor([System.Drawing.Color]::White)
+    }
+    $searchWs.View.FreezePanes(6, 1)
 
-        # VBA project with search macro assigned to button
-        $pkg.Workbook.CreateVBAProject()
+    # Add Go button as a shape
+    $button = $searchWs.Drawings.AddShape('GoButton', $shapeRoundRect)
+    $button.SetPosition(2, 0, 2, 0)
+    $button.SetSize(80, 30)
+    $button.Text = 'Go'
+    $button.TextAlignment = $textCenter
+    $button.Fill.Style = $fillSolidFill
+    $button.Fill.Color = [System.Drawing.Color]::FromArgb(68, 114, 196)
+    $button.Font.Color = [System.Drawing.Color]::White
+    $button.Font.Bold = $true
+    $button.Font.Size = 11
 
-        # Assign macro via Workbook_Open (compatible with all EPPlus versions)
-        $pkg.Workbook.CodeModule.Code = @"
+    # VBA project with search macro assigned to button
+    $pkg.Workbook.CreateVBAProject()
+
+    # Assign macro via Workbook_Open (compatible with all EPPlus versions)
+    $pkg.Workbook.CodeModule.Code = @"
 Private Sub Workbook_Open()
     ThisWorkbook.Worksheets("Search").Shapes("GoButton").OnAction = "RunSearch"
 End Sub
 "@
 
-        # Add VBA module with the search logic
-        $vbaModule = $pkg.Workbook.VbaProject.Modules.AddModule('SearchModule')
-        $vbaModule.Code = @"
+    # Add VBA module with the search logic
+    $vbaModule = $pkg.Workbook.VbaProject.Modules.AddModule('SearchModule')
+    $vbaModule.Code = @"
 Public Sub RunSearch()
     Dim searchWs As Worksheet
     Dim dataWs As Worksheet
     Set searchWs = ThisWorkbook.Worksheets("Search")
-    Set dataWs = ThisWorkbook.Worksheets("HostInventory")
+    Set dataWs = ThisWorkbook.Worksheets("All_Hosts")
 
     Dim searchVal As String
     searchVal = LCase(Trim(searchWs.Range("B3").Value))
@@ -481,7 +532,7 @@ Public Sub RunSearch()
 
     ' Search the data table
     Dim tbl As ListObject
-    Set tbl = dataWs.ListObjects("HostInventory")
+    Set tbl = dataWs.ListObjects("All_Hosts")
     Dim lastCol As Long
     lastCol = tbl.ListColumns.Count
 
@@ -524,30 +575,30 @@ Public Sub RunSearch()
 End Sub
 "@
 
-        Close-ExcelPackage $pkg
+    Close-ExcelPackage $pkg -SaveAs $reportFile
+    $pkg = $null
+}
+catch {
+    Write-Warning "Failed to build workbook: $_"
+}
+finally {
+    if ($null -ne $pkg) {
+        $pkg.Dispose()
         $pkg = $null
-        Write-Host "  Collected $(@($inventoryData).Count) host(s)." -ForegroundColor Green
-
-        Write-Host "  Report saved: $reportFile" -ForegroundColor Green
-        $successCount++
-    }
-    catch {
-        Write-Warning "Failed to process vCenter '$vcName': $_"
-        $failCount++
-    }
-    finally {
-        if ($null -ne $pkg) {
-            $pkg.Dispose()
-            $pkg = $null
-        }
-        if ($null -ne $connection) {
-            Write-Verbose "Disconnecting from $vcName"
-            Disconnect-VIServer -Server $connection -Confirm:$false -ErrorAction SilentlyContinue
-        }
     }
 }
 
-#endregion Main Loop
+Remove-Item $tempXlsm -Force -ErrorAction SilentlyContinue
+
+Write-Host "  Workbook saved: $reportFile" -ForegroundColor Green
+Write-Host "`n  Tabs created:" -ForegroundColor Cyan
+Write-Host "    Search    : Search UI" -ForegroundColor Gray
+Write-Host "    All_Hosts : $($allHostsData.Count) host(s)" -ForegroundColor Gray
+foreach ($alias in $perVCenterData.Keys) {
+    Write-Host "    $alias : $($perVCenterData[$alias].Count) host(s)" -ForegroundColor Gray
+}
+
+#endregion Build Workbook
 
 #region Summary
 

@@ -483,13 +483,13 @@ if (Test-Path $reportFile) { Remove-Item $reportFile -Force }
 
 $allInventoryData | Export-Excel -Path $tempXlsx -WorksheetName 'All_VMs' `
     -AutoSize -FreezeTopRow -BoldTopRow -ConditionalText $vmCfRules `
-    -TableName 'All_VMs' -TableStyle Medium6
+    -TableName 'All_VMs' -TableStyle Medium9
 
 # Export additional data tabs to the same workbook
 if (@($missingTagsData).Count -gt 0) {
     $missingTagsData | Export-Excel -Path $tempXlsx -WorksheetName 'MissingTags' `
         -AutoSize -FreezeTopRow -BoldTopRow `
-        -TableName 'MissingTags' -TableStyle Medium6
+        -TableName 'MissingTags' -TableStyle Medium9
 }
 else {
     # Create empty sheet with header note
@@ -499,7 +499,7 @@ else {
 if ($vmBiosData.Count -gt 0) {
     $vmBiosData | Export-Excel -Path $tempXlsx -WorksheetName 'VM_BIOS' `
         -AutoSize -FreezeTopRow -BoldTopRow -ConditionalText $vmCfRules `
-        -TableName 'VM_BIOS' -TableStyle Medium6
+        -TableName 'VM_BIOS' -TableStyle Medium9
 }
 else {
     Export-Excel -Path $tempXlsx -WorksheetName 'VM_BIOS' -InputObject $null
@@ -508,7 +508,7 @@ else {
 if ($poweredOffData.Count -gt 0) {
     $poweredOffData | Export-Excel -Path $tempXlsx -WorksheetName 'VMs_Powered_Off' `
         -AutoSize -FreezeTopRow -BoldTopRow -ConditionalText $vmCfRules `
-        -TableName 'VMs_Powered_Off' -TableStyle Medium6
+        -TableName 'VMs_Powered_Off' -TableStyle Medium9
 }
 else {
     Export-Excel -Path $tempXlsx -WorksheetName 'VMs_Powered_Off' -InputObject $null
@@ -524,7 +524,7 @@ foreach ($vcName in $perVCenterData.Keys) {
     if ($vcData.Count -gt 0) {
         $vcData | Export-Excel -Path $tempXlsx -WorksheetName $tabName `
             -AutoSize -FreezeTopRow -BoldTopRow -ConditionalText $vmCfRules `
-            -TableName ($tabName -replace '[^A-Za-z0-9_]', '_') -TableStyle Medium6
+            -TableName ($tabName -replace '[^A-Za-z0-9_]', '_') -TableStyle Medium9
     }
     else {
         Export-Excel -Path $tempXlsx -WorksheetName $tabName -InputObject $null
