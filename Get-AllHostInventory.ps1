@@ -138,7 +138,7 @@ $failCount = 0
 
 foreach ($vc in $config.VCenters) {
     $vcName = $vc.Name
-    $vcAlias = if ($vc.Alias) { $vc.Alias } else { $vcName }
+    $vcAlias = if ($vc.Alias) { $vc.Alias } else { $vcName.Split('.')[0] }
     Write-Host "`nProcessing vCenter: $vcAlias ($vcName)" -ForegroundColor Cyan
 
     $reportFile = Join-Path $OutputDir "ESX_HostInventory_$vcAlias.xlsm"
@@ -148,6 +148,7 @@ foreach ($vc in $config.VCenters) {
     Backup-PreviousReport -SourcePath $reportFile -ArchivePath $archiveFile
 
     $connection = $null
+    $pkg = $null
     try {
         # Retrieve credential from DPAPI-encrypted file
         $credPath = Join-Path $credDir $vc.CredentialFile
@@ -358,17 +359,22 @@ foreach ($vc in $config.VCenters) {
             New-ConditionalText -Text 'Maintenance' -Range 'AC:AC' -BackgroundColor Yellow
         )
 
-        # Export data to temp xlsx, then add Search tab and save as xlsm
-        $tempXlsx = Join-Path $OutputDir "ESX_HostInventory_$vcName.tmp.xlsx"
-        if (Test-Path $tempXlsx) { Remove-Item $tempXlsx -Force }
+        # Guard: skip workbook creation if no hosts were collected
+        if (-not $inventoryData) {
+            Write-Warning "  No hosts collected for '$vcAlias' — skipping workbook creation."
+            $successCount++
+            continue
+        }
+
+        # Export directly to xlsm (single-sheet — no temp file required)
         if (Test-Path $reportFile) { Remove-Item $reportFile -Force }
 
-        $inventoryData | Export-Excel -Path $tempXlsx -WorksheetName 'HostInventory' `
+        $inventoryData | Export-Excel -Path $reportFile -WorksheetName 'HostInventory' `
             -AutoSize -FreezeTopRow -BoldTopRow -ConditionalText $hostCfRules `
             -TableName 'HostInventory' -TableStyle Medium6
 
         # Add Search tab with input box and Go button
-        $pkg = Open-ExcelPackage $tempXlsx
+        $pkg = Open-ExcelPackage $reportFile
 
         # Resolve EPPlus enum values at runtime (search by short name to handle namespace changes across versions)
         $epAsm = $pkg.GetType().Assembly
@@ -510,8 +516,8 @@ Public Sub RunSearch()
 End Sub
 "@
 
-        Close-ExcelPackage $pkg -SaveAs $reportFile
-        Remove-Item $tempXlsx -Force -ErrorAction SilentlyContinue
+        Close-ExcelPackage $pkg
+        $pkg = $null
         Write-Host "  Collected $(@($inventoryData).Count) host(s)." -ForegroundColor Green
 
         Write-Host "  Report saved: $reportFile" -ForegroundColor Green
@@ -522,6 +528,10 @@ End Sub
         $failCount++
     }
     finally {
+        if ($null -ne $pkg) {
+            $pkg.Dispose()
+            $pkg = $null
+        }
         if ($null -ne $connection) {
             Write-Verbose "Disconnecting from $vcName"
             Disconnect-VIServer -Server $connection -Confirm:$false -ErrorAction SilentlyContinue

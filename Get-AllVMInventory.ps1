@@ -153,7 +153,7 @@ $failCount = 0
 
 foreach ($vc in $config.VCenters) {
     $vcName = $vc.Name
-    $vcAlias = if ($vc.Alias) { $vc.Alias } else { $vcName }
+    $vcAlias = if ($vc.Alias) { $vc.Alias } else { $vcName.Split('.')[0] }
     Write-Host "`nProcessing vCenter: $vcAlias ($vcName)" -ForegroundColor Cyan
 
     $connection = $null
@@ -469,7 +469,7 @@ $vmCfRules = @(
 )
 
 # Export All_VMs tab first (this creates the workbook)
-$tempXlsx = Join-Path $OutputDir 'VMInventory_All.tmp.xlsx'
+$tempXlsx = Join-Path $OutputDir 'VMInventory_All.tmp.xlsm'
 if (Test-Path $tempXlsx) { Remove-Item $tempXlsx -Force }
 if (Test-Path $reportFile) { Remove-Item $reportFile -Force }
 
@@ -673,6 +673,7 @@ End Sub
 "@
 
 Close-ExcelPackage $pkg -SaveAs $reportFile
+$pkg = $null
 Remove-Item $tempXlsx -Force -ErrorAction SilentlyContinue
 
 Write-Host "  Workbook saved: $reportFile" -ForegroundColor Green
