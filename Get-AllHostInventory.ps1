@@ -96,7 +96,8 @@ function Backup-PreviousReport {
     }
 
     Write-Verbose "Archiving $SourcePath -> $ArchivePath"
-    Move-Item -Path $SourcePath -Destination $ArchivePath -Force
+    Copy-Item -Path $SourcePath -Destination $ArchivePath -Force
+    Remove-Item -Path $SourcePath -Force
 }
 
 #endregion Functions
