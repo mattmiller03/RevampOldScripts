@@ -96,8 +96,15 @@ function Backup-PreviousReport {
     }
 
     Write-Verbose "Archiving $SourcePath -> $ArchivePath"
-    Copy-Item -Path $SourcePath -Destination $ArchivePath -Force
-    Remove-Item -Path $SourcePath -Force
+    try {
+        [System.IO.File]::Copy($SourcePath, $ArchivePath, $true)
+        [System.IO.File]::Delete($SourcePath)
+    }
+    catch {
+        Write-Warning "Could not archive previous report (OneDrive may have locked it): $_"
+        Write-Warning "Deleting previous report without archiving: $SourcePath"
+        [System.IO.File]::Delete($SourcePath)
+    }
 }
 
 #endregion Functions
