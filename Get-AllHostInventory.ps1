@@ -178,6 +178,17 @@ foreach ($vc in $config.VCenters) {
         $connection = Connect-VIServer -Server $vcName -Credential $credential -ErrorAction Stop
         Write-Host "  Connected to $vcName." -ForegroundColor Green
 
+        # Get license assignment manager for per-host license lookups
+        $licAssignMgr = $null
+        try {
+            $siView = Get-View ServiceInstance -Server $connection
+            $licMgr = Get-View $siView.Content.LicenseManager -Server $connection
+            $licAssignMgr = Get-View $licMgr.LicenseAssignmentManager -Server $connection
+        }
+        catch {
+            Write-Warning "  Could not retrieve LicenseAssignmentManager: $_"
+        }
+
         # Collect host inventory
         Write-Host "  Collecting host inventory..." -ForegroundColor Gray
         $vmHosts = Get-VMHost -Server $connection -ErrorAction Stop
@@ -235,8 +246,8 @@ foreach ($vc in $config.VCenters) {
             # Advanced settings
             $advSettings = Get-AdvancedSetting -Entity $vmHost -ErrorAction SilentlyContinue
             $syslogServer = ($advSettings | Where-Object { $_.Name -eq 'Syslog.global.logHost' }).Value
-            $hostAgentSetting = ($advSettings | Where-Object { $_.Name -eq 'Config.HostAgent.plugins.solo.enableMob' }).Value
-            $ipv6Enabled = ($advSettings | Where-Object { $_.Name -eq 'Net.IPv6Enabled' }).Value
+            $hostAgentSetting = ($advSettings | Where-Object { $_.Name -eq 'Config.HostAgent.plugins.hostsvc.esxAdminsGroup' }).Value
+            $ipv6Enabled = [bool]($advSettings | Where-Object { $_.Name -eq 'Net.IPv6Enabled' }).Value
 
             # Services
             $sshEnabled = ($services | Where-Object { $_.Key -eq 'TSM-SSH' }).Running
@@ -267,19 +278,21 @@ foreach ($vc in $config.VCenters) {
 
             # Hyperthreading
             $htActive = $hostView.Config.HyperThread.Active
-            $logicalProcessors = $vmHost.NumCpu
+            $logicalProcessors = $hostView.Hardware.CpuInfo.NumCpuThreads
 
-            # License
+            # License — query via LicenseAssignmentManager (set up once per vCenter)
             $licenseKey = ''
-            $licMgr = Get-View -Id 'LicenseManager-ha-license-manager' -ErrorAction SilentlyContinue
-            if ($licMgr) {
-                $hostLic = $licMgr.Licenses | Where-Object {
-                    $_.Properties | Where-Object { $_.Key -eq 'EntityId' -and $_.Value -eq $vmHost.MoRef.Value }
-                } | Select-Object -First 1
-                if ($hostLic) { $licenseKey = $hostLic.LicenseKey }
-            }
-            if (-not $licenseKey) {
-                $licenseKey = ($advSettings | Where-Object { $_.Name -eq 'License.ProductKey' }).Value
+            if ($licAssignMgr) {
+                try {
+                    $hostId = $vmHost.ExtensionData.MoRef.Value
+                    $licAssignments = $licAssignMgr.QueryAssignedLicenses($hostId)
+                    if ($licAssignments -and $licAssignments.Count -gt 0) {
+                        $licenseKey = $licAssignments[0].AssignedLicense.LicenseKey
+                    }
+                }
+                catch {
+                    Write-Verbose "  Could not query license for $($vmHost.Name): $_"
+                }
             }
 
             # Custom attributes
@@ -295,9 +308,11 @@ foreach ($vc in $config.VCenters) {
             if ($hostView.Runtime.BootInfo) {
                 $secureBoot = [bool]$hostView.Runtime.BootInfo.SecureBoot
             }
-            if ($hostView.Hardware.TpmInfo) {
+            $tpmPcrValues = $hostView.Runtime.TpmPcrValues
+            if ($tpmPcrValues) {
                 $tpmSupport = $true
-                $tpmVersion = $hostView.Hardware.TpmInfo.TpmVersion
+                $hasSha256 = $tpmPcrValues | Where-Object { $_.DigestMethod -eq 'SHA256' }
+                $tpmVersion = if ($hasSha256) { '2.0' } else { '1.2' }
             }
 
             [PSCustomObject]@{
@@ -329,7 +344,12 @@ foreach ($vc in $config.VCenters) {
                 'DataCenter'                 = (Get-Datacenter -VMHost $vmHost -ErrorAction SilentlyContinue).Name
                 'vCenter Server'             = $vcName
                 'vCenter Version'            = $vcVersion
-                'Esxi-status'                = $vmHost.ConnectionState
+                'ConnectionState'            = $vmHost.ConnectionState
+                'Esxi-Status'                = switch ($vmHost.ConnectionState) {
+                    'Connected'     { 'Green' }
+                    'Maintenance'   { 'Yellow' }
+                    default         { 'Red' }
+                }
                 'Physical-NICs'              = $pNics
                 'ESXi Shell-Enabled'         = $shellEnabled
                 'SSH-Enabled'                = $sshEnabled
@@ -343,7 +363,6 @@ foreach ($vc in $config.VCenters) {
                 'VMotion IP'                 = $vmotionIP
                 'Fault Tolerance IP'         = $ftIP
                 'License Key'                = $licenseKey
-                'ConnectionState'            = $vmHost.ConnectionState
                 'vmKernel Gateway'           = $vmkGateway
                 'EBS_Number'                 = $ebsNumber
                 'DLA_Asset'                  = $dlaAsset
@@ -383,15 +402,16 @@ Write-Host "`nBuilding combined workbook..." -ForegroundColor Cyan
 # Conditional formatting rules
 $hostCfRules = @(
     # Red: SSH enabled
-    New-ConditionalText -Text 'True' -Range 'AF:AF' -BackgroundColor Red -ConditionalTextColor White
+    New-ConditionalText -Text 'True' -Range 'AG:AG' -BackgroundColor Red -ConditionalTextColor White
     # Red: ESXi Shell enabled
-    New-ConditionalText -Text 'True' -Range 'AE:AE' -BackgroundColor Red -ConditionalTextColor White
-    # Red: Disconnected or NotResponding
+    New-ConditionalText -Text 'True' -Range 'AF:AF' -BackgroundColor Red -ConditionalTextColor White
+    # Red: ConnectionState issues
     New-ConditionalText -Text 'Disconnected' -Range 'AC:AC' -BackgroundColor Red -ConditionalTextColor White
     New-ConditionalText -Text 'NotResponding' -Range 'AC:AC' -BackgroundColor Red -ConditionalTextColor White
-    # Red: ConnectionState issues
-    New-ConditionalText -Text 'Disconnected' -Range 'AQ:AQ' -BackgroundColor Red -ConditionalTextColor White
-    New-ConditionalText -Text 'NotResponding' -Range 'AQ:AQ' -BackgroundColor Red -ConditionalTextColor White
+    # Esxi-Status color indicators
+    New-ConditionalText -Text 'Red' -Range 'AD:AD' -BackgroundColor Red -ConditionalTextColor White
+    New-ConditionalText -Text 'Yellow' -Range 'AD:AD' -BackgroundColor Yellow
+    New-ConditionalText -Text 'Green' -Range 'AD:AD' -BackgroundColor Green -ConditionalTextColor White
     # Yellow: PowerState not PoweredOn
     New-ConditionalText -Text 'Standby' -Range 'F:F' -BackgroundColor Yellow
     New-ConditionalText -Text 'PoweredOff' -Range 'F:F' -BackgroundColor Yellow

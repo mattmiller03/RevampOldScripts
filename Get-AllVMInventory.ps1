@@ -238,11 +238,11 @@ foreach ($vc in $config.VCenters) {
                 }
             }
 
-            # Network adapters (up to 5)
+            # Network adapters (up to 5) — NIC type (e.g. Vmxnet3, E1000)
             $netAdapters = Get-NetworkAdapter -VM $vm -ErrorAction SilentlyContinue | Sort-Object Name
             $nics = @('')*5
             for ($i = 0; $i -lt [math]::Min($netAdapters.Count, 5); $i++) {
-                $nics[$i] = $netAdapters[$i].NetworkName
+                $nics[$i] = $netAdapters[$i].Type
             }
 
             # Hard disks (up to 12)
@@ -259,9 +259,9 @@ foreach ($vc in $config.VCenters) {
             $vvtd = $vmView.Config.VvtdEnabled
             $vbs = $vmView.Config.VbsEnabled
 
-            # Hostname vs VM name comparison
+            # Hostname vs VM name comparison — show actual hostname when it differs
             $guestHostname = $vmView.Guest.HostName
-            $nameNotEqual = if ($guestHostname -and $guestHostname -ne $vm.Name) { $true } else { $false }
+            $nameNotEqual = if ($guestHostname -and $guestHostname -ne $vm.Name) { $guestHostname } else { '' }
 
             # vTPM
             $vtpm = $null -ne ($devices | Where-Object { $_ -is [VMware.Vim.VirtualTPM] })
@@ -323,11 +323,11 @@ foreach ($vc in $config.VCenters) {
                 'IP #1'                   = $ips[0]
                 'IP #2'                   = $ips[1]
                 'IP #3'                   = $ips[2]
-                '1st vNic'                = $nics[0]
-                '2nd vNic'                = $nics[1]
-                '3rd vNic'                = $nics[2]
-                '4th vNic'                = $nics[3]
-                '5th vNic'                = $nics[4]
+                '1st vNic Type'           = $nics[0]
+                '2nd vNic Type'           = $nics[1]
+                '3rd vNic Type'           = $nics[2]
+                '4th vNic Type'           = $nics[3]
+                '5th vNic Type'           = $nics[4]
                 'VMTools Version'         = $toolsVersion
                 'Disk1'                   = $disks[0]
                 'Disk2'                   = $disks[1]
@@ -347,7 +347,7 @@ foreach ($vc in $config.VCenters) {
                 'EfiSecureBootEnabled'    = $efiSecureBoot
                 'VvtdEnabled'             = $vvtd
                 'VbsEnabled'              = $vbs
-                'Hostname not equal VMname' = $nameNotEqual
+                'Guest Hostname'          = $nameNotEqual
             }
 
             # Add tag columns dynamically from config
