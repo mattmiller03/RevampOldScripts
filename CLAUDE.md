@@ -93,7 +93,7 @@ If either field is missing, the Not_Patched tab is skipped. The major version nu
   - **\<Region\>** — One tab per region (e.g., EAST, WEST)
 
 ### Azure Authentication
-Azure uses service principal credentials (AppID + ClientSecret) stored as DPAPI-encrypted PSCredential files. The PSCredential Username = ApplicationID, Password = ClientSecret. TenantID and Environment are in `config/azure.json`. A single `Connect-AzAccount` session is shared across all subscriptions, with `Set-AzContext` switching per subscription.
+Azure uses service principal credentials (AppID + ClientSecret) stored as DPAPI-encrypted PSCredential files. The PSCredential Username = ApplicationID, Password = ClientSecret. The config groups subscriptions under their tenant, each with its own TenantID and credential file. The script connects per tenant via `Connect-AzAccount`, iterates subscriptions within that tenant via `Set-AzContext`, then disconnects before moving to the next tenant.
 
 ### AWS Authentication
 AWS uses access key credentials (AccessKeyID + SecretAccessKey) stored as DPAPI-encrypted PSCredential files. The PSCredential Username = Access Key ID, Password = Secret Access Key. Regions are configured in `config/aws.json`. Credentials are loaded once via `Set-AWSCredential` and `Set-DefaultAWSRegion` switches per region.

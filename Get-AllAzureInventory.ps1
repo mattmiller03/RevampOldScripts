@@ -122,7 +122,8 @@ if (-not (Test-Path -Path $ConfigFile)) {
 
 $config = Get-Content -Path $ConfigFile -Raw | ConvertFrom-Json
 $credDir = Join-Path $PSScriptRoot $config.CredentialDir
-Write-Host "Loaded $($config.Subscriptions.Count) subscription(s) from config." -ForegroundColor Cyan
+$totalSubs = ($config.Tenants.Subscriptions | Measure-Object).Count
+Write-Host "Loaded $($config.Tenants.Count) tenant(s) / $totalSubs subscription(s) from config." -ForegroundColor Cyan
 Write-Host "Environment: $($config.Environment)" -ForegroundColor Cyan
 
 # Output file paths
@@ -142,45 +143,45 @@ $perSubscriptionData = [ordered]@{}
 $successCount = 0
 $failCount = 0
 
-# Connect to Azure (once for entire run)
-# Load the first subscription's credential to authenticate
-$firstSub = $config.Subscriptions[0]
-$credPath = Join-Path $credDir $firstSub.CredentialFile
-if (-not (Test-Path -Path $credPath)) {
-    Write-Error "Credential file not found: $credPath. Run Initialize-AzureCredentials.ps1 first."
-    Stop-Transcript
-    return
-}
+# Connect per tenant, iterate subscriptions within each tenant
+foreach ($tenant in $config.Tenants) {
+    $tenantId = $tenant.TenantID
+    $credPath = Join-Path $credDir $tenant.CredentialFile
+    if (-not (Test-Path -Path $credPath)) {
+        Write-Warning "Credential file not found: $credPath. Skipping tenant $tenantId."
+        $failCount += $tenant.Subscriptions.Count
+        continue
+    }
 
-$azureConnected = $false
-try {
-    Write-Host "Connecting to $($config.Environment)..." -ForegroundColor Gray
-    $credential = Import-Clixml -Path $credPath -ErrorAction Stop
-    Connect-AzAccount -Environment $config.Environment -ServicePrincipal `
-        -TenantId $config.TenantID -Credential $credential -ErrorAction Stop | Out-Null
-    $azureConnected = $true
-    Write-Host "Connected to $($config.Environment)." -ForegroundColor Green
-}
-catch {
-    Write-Error "Failed to connect to Azure: $_"
-    Stop-Transcript
-    return
-}
+    $azureConnected = $false
+    try {
+        Write-Host "`nConnecting to $($config.Environment) (Tenant: $tenantId)..." -ForegroundColor Gray
+        $credential = Import-Clixml -Path $credPath -ErrorAction Stop
+        Connect-AzAccount -Environment $config.Environment -ServicePrincipal `
+            -TenantId $tenantId -Credential $credential -ErrorAction Stop | Out-Null
+        $azureConnected = $true
+        Write-Host "Connected to tenant $tenantId." -ForegroundColor Green
+    }
+    catch {
+        Write-Warning "Failed to connect to tenant '$tenantId': $_"
+        $failCount += $tenant.Subscriptions.Count
+        continue
+    }
 
-try {
-    foreach ($sub in $config.Subscriptions) {
-        $subName = $sub.Name
-        $subAlias = if ($sub.Alias) { $sub.Alias } else { $subName.Split('-')[1] }
-        Write-Host "`nProcessing Subscription: $subAlias ($subName)" -ForegroundColor Cyan
+    try {
+        foreach ($sub in $tenant.Subscriptions) {
+            $subName = $sub.Name
+            $subAlias = if ($sub.Alias) { $sub.Alias } else { $subName.Split('-')[1] }
+            Write-Host "`nProcessing Subscription: $subAlias ($subName)" -ForegroundColor Cyan
 
-        try {
-            Set-AzContext -Subscription $subName -ErrorAction Stop | Out-Null
+            try {
+                Set-AzContext -Subscription $subName -ErrorAction Stop | Out-Null
 
-            $vms = Get-AzVM -ErrorAction Stop | Sort-Object Name
-            Write-Verbose "  Found $($vms.Count) VM(s) in $subName"
+                $vms = Get-AzVM -ErrorAction Stop | Sort-Object Name
+                Write-Verbose "  Found $($vms.Count) VM(s) in $subName"
 
-            # Cache VM sizes for this subscription's locations to avoid repeated calls
-            $vmSizeCache = @{}
+                # Cache VM sizes for this subscription's locations to avoid repeated calls
+                $vmSizeCache = @{}
 
             $inventoryData = foreach ($vm in $vms) {
                 $date = Get-Date -Format 'HH:mm'
@@ -377,16 +378,17 @@ try {
             Write-Host "  Collected $($subInventory.Count) VM(s)." -ForegroundColor Green
             $successCount++
         }
-        catch {
-            Write-Warning "Failed to process subscription '$subName': $_"
-            $failCount++
+            catch {
+                Write-Warning "Failed to process subscription '$subName': $_"
+                $failCount++
+            }
         }
     }
-}
-finally {
-    if ($azureConnected) {
-        Write-Verbose "Disconnecting from Azure"
-        Disconnect-AzAccount -ErrorAction SilentlyContinue | Out-Null
+    finally {
+        if ($azureConnected) {
+            Write-Verbose "Disconnecting from tenant $tenantId"
+            Disconnect-AzAccount -ErrorAction SilentlyContinue | Out-Null
+        }
     }
 }
 

@@ -3,8 +3,8 @@
     One-time setup script to store Azure service principal credentials as DPAPI-encrypted XML files.
 
 .DESCRIPTION
-    Reads the Azure subscription list from config/azure.json and prompts for service principal
-    credentials for each unique credential file. Credentials are stored as encrypted .cred.xml
+    Reads the Azure tenant/subscription list from config/azure.json and prompts for service
+    principal credentials for each unique credential file. Credentials are stored as encrypted .cred.xml
     files using PowerShell's Export-Clixml, which encrypts via Windows DPAPI (tied to the current
     user and machine).
 
@@ -17,7 +17,7 @@
     account).
 
 .PARAMETER ConfigFile
-    Path to the JSON configuration file containing the Azure subscription list.
+    Path to the JSON configuration file containing the Azure tenant/subscription list.
     Defaults to config/azure.json relative to this script's directory.
 
 .PARAMETER TestConnection
@@ -58,23 +58,31 @@ if (-not (Test-Path -Path $credDir)) {
     New-Item -Path $credDir -ItemType Directory -Force | Out-Null
 }
 
-# --- Deduplicate credential files (multiple subscriptions may share the same credential) ---
+# --- Deduplicate credential files (multiple tenants may share the same credential) ---
 $credentialMap = [ordered]@{}
-foreach ($sub in $config.Subscriptions) {
-    $credFile = $sub.CredentialFile
+foreach ($tenant in $config.Tenants) {
+    $credFile = $tenant.CredentialFile
     if (-not $credentialMap.ContainsKey($credFile)) {
-        $credentialMap[$credFile] = [System.Collections.Generic.List[string]]::new()
+        $credentialMap[$credFile] = @{
+            TenantIDs = [System.Collections.Generic.List[string]]::new()
+            SubAliases = [System.Collections.Generic.List[string]]::new()
+        }
     }
-    $subAlias = if ($sub.Alias) { $sub.Alias } else { $sub.Name }
-    $credentialMap[$credFile].Add($subAlias)
+    $credentialMap[$credFile].TenantIDs.Add($tenant.TenantID)
+    foreach ($sub in $tenant.Subscriptions) {
+        $subAlias = if ($sub.Alias) { $sub.Alias } else { $sub.Name }
+        $credentialMap[$credFile].SubAliases.Add($subAlias)
+    }
 }
 
 # --- Prompt for and store credentials for each unique credential file ---
 foreach ($credFile in $credentialMap.Keys) {
     $credPath = Join-Path $credDir $credFile
-    $subList = $credentialMap[$credFile] -join ', '
+    $subList = $credentialMap[$credFile].SubAliases -join ', '
+    $tenantList = $credentialMap[$credFile].TenantIDs -join ', '
 
     Write-Host "`nEnter Azure Service Principal credentials for: $subList" -ForegroundColor Cyan
+    Write-Host "  Tenant(s): $tenantList" -ForegroundColor Gray
     Write-Host "  Username = Application (Client) ID" -ForegroundColor Gray
     Write-Host "  Password = Client Secret" -ForegroundColor Gray
     Write-Host "  Credential file: $credPath" -ForegroundColor Gray
@@ -89,12 +97,13 @@ foreach ($credFile in $credentialMap.Keys) {
     $credential | Export-Clixml -Path $credPath -Force
     Write-Host "  Credential stored for $subList." -ForegroundColor Green
 
-    # Optionally test the connection
+    # Optionally test the connection (uses the first tenant for this credential)
     if ($TestConnection) {
-        Write-Host "  Testing connection to $($config.Environment)..." -ForegroundColor Gray
+        $testTenantId = $credentialMap[$credFile].TenantIDs[0]
+        Write-Host "  Testing connection to $($config.Environment) (Tenant: $testTenantId)..." -ForegroundColor Gray
         try {
             Connect-AzAccount -Environment $config.Environment -ServicePrincipal `
-                -TenantId $config.TenantID -Credential $credential -ErrorAction Stop | Out-Null
+                -TenantId $testTenantId -Credential $credential -ErrorAction Stop | Out-Null
             Write-Host "  Connection successful." -ForegroundColor Green
             Disconnect-AzAccount -ErrorAction SilentlyContinue | Out-Null
         }
@@ -105,7 +114,8 @@ foreach ($credFile in $credentialMap.Keys) {
 }
 
 $uniqueCount = $credentialMap.Keys.Count
-$subCount = $config.Subscriptions.Count
-Write-Host "`nSetup complete. Stored $uniqueCount credential file(s) for $subCount subscription(s) in '$credDir'." -ForegroundColor Green
+$subCount = ($config.Tenants.Subscriptions | Measure-Object).Count
+$tenantCount = $config.Tenants.Count
+Write-Host "`nSetup complete. Stored $uniqueCount credential file(s) for $tenantCount tenant(s) / $subCount subscription(s) in '$credDir'." -ForegroundColor Green
 Write-Host "Credential files are encrypted via Windows DPAPI for the current user on this machine." -ForegroundColor Gray
 Write-Host "You can now run Get-AllAzureInventory.ps1 unattended." -ForegroundColor Gray
