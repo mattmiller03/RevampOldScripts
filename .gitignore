@@ -1,6 +1,9 @@
 # Output directories (inventory reports, transcripts, archives)
 Output/
 
+# Scrubbed legacy script copies
+legacy/scrubbed/
+
 # Temporary xlsx copies and report files
 *.xlsx
 *.xlsm
