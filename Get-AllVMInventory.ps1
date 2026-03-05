@@ -589,13 +589,13 @@ if (Test-Path $tempXlsx) { Remove-Item $tempXlsx -Force }
 if (Test-Path $reportFile) { Remove-Item $reportFile -Force }
 
 $allInventoryData | Export-Excel -Path $tempXlsx -WorksheetName 'All_VMs' `
-    -AutoSize -FreezeTopRow -BoldTopRow -ConditionalText $vmCfRules `
+    -AutoSize -FreezePane 2, 2 -BoldTopRow -ConditionalText $vmCfRules `
     -TableName 'All_VMs' -TableStyle Medium9
 
 # Export additional data tabs to the same workbook
 if (@($missingTagsData).Count -gt 0) {
     $missingTagsData | Export-Excel -Path $tempXlsx -WorksheetName 'MissingTags' `
-        -AutoSize -FreezeTopRow -BoldTopRow `
+        -AutoSize -FreezePane 2, 2 -BoldTopRow `
         -TableName 'MissingTags' -TableStyle Medium9
 }
 else {
@@ -605,7 +605,7 @@ else {
 
 if ($vmBiosData.Count -gt 0) {
     $vmBiosData | Export-Excel -Path $tempXlsx -WorksheetName 'VM_BIOS' `
-        -AutoSize -FreezeTopRow -BoldTopRow -ConditionalText $vmCfRules `
+        -AutoSize -FreezePane 2, 2 -BoldTopRow -ConditionalText $vmCfRules `
         -TableName 'VM_BIOS' -TableStyle Medium9
 }
 else {
@@ -614,7 +614,7 @@ else {
 
 if ($poweredOffData.Count -gt 0) {
     $poweredOffData | Export-Excel -Path $tempXlsx -WorksheetName 'VMs_Powered_Off' `
-        -AutoSize -FreezeTopRow -BoldTopRow -ConditionalText $vmCfRules `
+        -AutoSize -FreezePane 2, 2 -BoldTopRow -ConditionalText $vmCfRules `
         -TableName 'VMs_Powered_Off' -TableStyle Medium9
 }
 else {
@@ -630,7 +630,7 @@ foreach ($vcName in $perVCenterData.Keys) {
 
     if ($vcData.Count -gt 0) {
         $vcData | Export-Excel -Path $tempXlsx -WorksheetName $tabName `
-            -AutoSize -FreezeTopRow -BoldTopRow -ConditionalText $vmCfRules `
+            -AutoSize -FreezePane 2, 2 -BoldTopRow -ConditionalText $vmCfRules `
             -TableName ($tabName -replace '[^A-Za-z0-9_]', '_') -TableStyle Medium9
     }
     else {
@@ -641,7 +641,7 @@ foreach ($vcName in $perVCenterData.Keys) {
 # CPU Hot Add FALSE
 if ($cpuHotAddFalse.Count -gt 0) {
     $cpuHotAddFalse | Export-Excel -Path $tempXlsx -WorksheetName 'CPU_HotAdd_FALSE' `
-        -AutoSize -FreezeTopRow -BoldTopRow -ConditionalText $vmCfRules `
+        -AutoSize -FreezePane 2, 2 -BoldTopRow -ConditionalText $vmCfRules `
         -TableName 'CPU_HotAdd_FALSE' -TableStyle Medium9
 }
 else {
@@ -651,7 +651,7 @@ else {
 # Memory Hot Add FALSE
 if ($memHotAddFalse.Count -gt 0) {
     $memHotAddFalse | Export-Excel -Path $tempXlsx -WorksheetName 'Memory_HotAdd_FALSE' `
-        -AutoSize -FreezeTopRow -BoldTopRow -ConditionalText $vmCfRules `
+        -AutoSize -FreezePane 2, 2 -BoldTopRow -ConditionalText $vmCfRules `
         -TableName 'Memory_HotAdd_FALSE' -TableStyle Medium9
 }
 else {
@@ -661,7 +661,7 @@ else {
 # VMTools Version — VMs not on the latest tools version
 if ($vmToolsOutdated.Count -gt 0) {
     $vmToolsOutdated | Export-Excel -Path $tempXlsx -WorksheetName 'VMToolsVersion' `
-        -AutoSize -FreezeTopRow -BoldTopRow -ConditionalText $vmCfRules `
+        -AutoSize -FreezePane 2, 2 -BoldTopRow -ConditionalText $vmCfRules `
         -TableName 'VMToolsVersion' -TableStyle Medium9
 }
 else {
@@ -671,7 +671,7 @@ else {
 # Floppy Drives
 if ($floppyDriveVMs.Count -gt 0) {
     $floppyDriveVMs | Export-Excel -Path $tempXlsx -WorksheetName 'FloppyDrives' `
-        -AutoSize -FreezeTopRow -BoldTopRow -ConditionalText $vmCfRules `
+        -AutoSize -FreezePane 2, 2 -BoldTopRow -ConditionalText $vmCfRules `
         -TableName 'FloppyDrives' -TableStyle Medium9
 }
 else {
@@ -732,7 +732,7 @@ for ($c = 1; $c -le $lastCol; $c++) {
 }
 
 # Freeze panes below header row
-$searchWs.View.FreezePanes(6, 1)
+$searchWs.View.FreezePanes(6, 2)
 
 # Add Go button (search)
 $goButton = $searchWs.Drawings.AddShape('GoButton', $shapeRoundRect)

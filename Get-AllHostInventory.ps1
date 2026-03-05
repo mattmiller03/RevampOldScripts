@@ -439,7 +439,7 @@ if (Test-Path $tempXlsm) { Remove-Item $tempXlsm -Force }
 # All_Hosts tab (combined)
 if ($allHostsData.Count -gt 0) {
     $allHostsData | Export-Excel -Path $tempXlsm -WorksheetName 'All_Hosts' `
-        -AutoSize -FreezeTopRow -BoldTopRow -ConditionalText $hostCfRules `
+        -AutoSize -FreezePane 2, 2 -BoldTopRow -ConditionalText $hostCfRules `
         -TableName 'All_Hosts' -TableStyle Medium9
 }
 else {
@@ -468,7 +468,7 @@ $notCurrentMajor = @($allHostsData | Where-Object {
 # NOT_SecureBoot tab
 if ($notSecureBoot.Count -gt 0) {
     $notSecureBoot | Export-Excel -Path $tempXlsm -WorksheetName 'NOT_SecureBoot' `
-        -AutoSize -FreezeTopRow -BoldTopRow -ConditionalText $hostCfRules `
+        -AutoSize -FreezePane 2, 2 -BoldTopRow -ConditionalText $hostCfRules `
         -TableName 'NOT_SecureBoot' -TableStyle Medium9
 }
 else {
@@ -479,7 +479,7 @@ else {
 if ($targetVersion -and $targetBuild) {
     if ($notPatched.Count -gt 0) {
         $notPatched | Export-Excel -Path $tempXlsm -WorksheetName 'Not_Patched' `
-            -AutoSize -FreezeTopRow -BoldTopRow -ConditionalText $hostCfRules `
+            -AutoSize -FreezePane 2, 2 -BoldTopRow -ConditionalText $hostCfRules `
             -TableName 'Not_Patched' -TableStyle Medium9
     }
     else {
@@ -493,7 +493,7 @@ else {
 # Not_Connected tab
 if ($notConnected.Count -gt 0) {
     $notConnected | Export-Excel -Path $tempXlsm -WorksheetName 'Not_Connected' `
-        -AutoSize -FreezeTopRow -BoldTopRow -ConditionalText $hostCfRules `
+        -AutoSize -FreezePane 2, 2 -BoldTopRow -ConditionalText $hostCfRules `
         -TableName 'Not_Connected' -TableStyle Medium9
 }
 else {
@@ -504,7 +504,7 @@ else {
 $notMajorTabName = "Not_On_ESX_$($targetMajor.TrimEnd('*'))"
 if ($notCurrentMajor.Count -gt 0) {
     $notCurrentMajor | Export-Excel -Path $tempXlsm -WorksheetName $notMajorTabName `
-        -AutoSize -FreezeTopRow -BoldTopRow -ConditionalText $hostCfRules `
+        -AutoSize -FreezePane 2, 2 -BoldTopRow -ConditionalText $hostCfRules `
         -TableName ($notMajorTabName -replace '[^A-Za-z0-9_]', '_') -TableStyle Medium9
 }
 else {
@@ -519,7 +519,7 @@ foreach ($alias in $perVCenterData.Keys) {
 
     if ($vcData.Count -gt 0) {
         $vcData | Export-Excel -Path $tempXlsm -WorksheetName $tabName `
-            -AutoSize -FreezeTopRow -BoldTopRow -ConditionalText $hostCfRules `
+            -AutoSize -FreezePane 2, 2 -BoldTopRow -ConditionalText $hostCfRules `
             -TableName ($tabName -replace '[^A-Za-z0-9_]', '_') -TableStyle Medium9
     }
     else {
@@ -577,7 +577,7 @@ try {
         $searchWs.Cells[5, $c].Style.Fill.BackgroundColor.SetColor([System.Drawing.Color]::FromArgb(68, 114, 196))
         $searchWs.Cells[5, $c].Style.Font.Color.SetColor([System.Drawing.Color]::White)
     }
-    $searchWs.View.FreezePanes(6, 1)
+    $searchWs.View.FreezePanes(6, 2)
 
     # Add Go button as a shape
     $button = $searchWs.Drawings.AddShape('GoButton', $shapeRoundRect)

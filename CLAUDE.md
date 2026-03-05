@@ -4,16 +4,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Purpose
 
-This repo contains VMware PowerCLI PowerShell scripts for collecting vSphere inventory data. Legacy scripts are kept for reference; revamped versions are the active codebase.
+This repo contains PowerShell scripts for collecting infrastructure inventory data from VMware vSphere and Azure cloud environments. Legacy scripts are kept for reference; revamped versions are the active codebase.
 
 ## Repository Structure
 
 ```
 config/vcenters.json              # vCenter list, credential paths, required tag categories
+config/azure.json                 # Azure subscription list, tenant, required tags
 config/credentials/*.cred.xml     # DPAPI-encrypted credential files (per-user, per-machine)
-Initialize-VCenterCredentials.ps1 # One-time setup: prompts for credentials and saves .cred.xml files
+Initialize-VCenterCredentials.ps1 # One-time setup: prompts for vCenter credentials
+Initialize-AzureCredentials.ps1   # One-time setup: prompts for Azure SP credentials
 Get-AllHostInventory.ps1          # Revamped: ESX host inventory collection (per-vCenter .xlsm)
 Get-AllVMInventory.ps1            # Revamped: VM inventory collection (single multi-tab .xlsm)
+Get-AllAzureInventory.ps1         # Revamped: Azure VM inventory collection (single multi-tab .xlsm)
 Get_All_Host_Inventory.ps1        # Legacy (reference only)
 Get_All_VM_Inventory.ps1          # Legacy (reference only)
 ```
@@ -24,6 +27,9 @@ Get_All_VM_Inventory.ps1          # Legacy (reference only)
 2. Edit `config/vcenters.json` with your vCenter servers, credential filenames, and required tag categories
 3. Run `.\Initialize-VCenterCredentials.ps1` interactively as the service account — prompts for credentials per vCenter and saves DPAPI-encrypted .cred.xml files
 4. Schedule `Get-AllHostInventory.ps1` and/or `Get-AllVMInventory.ps1` via Task Scheduler
+5. For Azure: `Install-Module Az` then edit `config/azure.json` with your subscriptions, tenant ID, and credential filenames
+6. Run `.\Initialize-AzureCredentials.ps1` interactively — prompts for service principal credentials (AppID + ClientSecret)
+7. Schedule `Get-AllAzureInventory.ps1` via Task Scheduler
 
 ## Architecture
 
@@ -60,6 +66,21 @@ The host inventory script uses two optional config fields to populate the **Not_
 
 If either field is missing, the Not_Patched tab is skipped. The major version number (first segment) is also used for the **Not_On_ESX_\<N\>** tab.
 
+### Azure VM Inventory (Get-AllAzureInventory.ps1)
+- Targets Azure US Government subscriptions via service principal authentication
+- Produces a **single** `AzureInventory_All.xlsm` workbook with multiple tabs:
+  - **Search** — VBA-powered search UI (searches All_VMs table)
+  - **All_VMs** — Combined Azure VM inventory from all subscriptions
+  - **Not_Running** — VMs not in 'running' state
+  - **NO_App-name** — VMs missing the App-name tag
+  - **NO_BootDiag** — VMs without boot diagnostics configured
+  - **IL4_VMs** — VMs with Impact-level tag = IL4
+  - **IL5_VMs** — VMs with Impact-level tag = IL5
+  - **\<Subscription\>** — One tab per subscription
+
+### Azure Authentication
+Azure uses service principal credentials (AppID + ClientSecret) stored as DPAPI-encrypted PSCredential files. The PSCredential Username = ApplicationID, Password = ClientSecret. TenantID and Environment are in `config/azure.json`. A single `Connect-AzAccount` session is shared across all subscriptions, with `Set-AzContext` switching per subscription.
+
 ### Tag Configuration
 vSphere tag categories follow the naming pattern `{TagPrefix}-{TagEnvironment}-{Category}` (e.g., `vCenter-Prod-App-Name`). The JSON config defines:
 - `TagPrefix` — global prefix (e.g., `"vCenter"`)
@@ -76,15 +97,17 @@ vSphere tag categories follow the naming pattern `{TagPrefix}-{TagEnvironment}-{
 At runtime the script looks up `vCenter-Prod-App-Name` in vSphere but writes the column as `Application_Tag1`. A VM appears on the MissingTags tab if **any** required tag category has all its columns blank.
 
 ### Shared Patterns
-Both inventory scripts share:
+All inventory scripts share:
 - `[CmdletBinding()]` with `param()` block — all paths configurable, defaults relative to `$PSScriptRoot`
-- Config loaded from JSON (`config/vcenters.json`) via `ConvertFrom-Json`
+- Config loaded from JSON via `ConvertFrom-Json`
 - Credentials loaded via `Import-Clixml` from `config/credentials/`
 - `Backup-PreviousReport` function archives prior workbook before each run
-- `try/catch/finally` per vCenter: connect, collect inventory, disconnect
-- Connection object captured from `Connect-VIServer` and disconnected specifically (no wildcard `*`)
+- `try/catch/finally` per target: connect, collect inventory, disconnect
 - Timestamped transcripts written to `Output/Transcripts/`
 - Summary at end: success/fail counts, duration
+- Search tab with VBA macro for filtering All_VMs table
+- `[ordered]@{}` cast to `[PSCustomObject]` for consistent column ordering
+- `[System.Collections.Generic.List[PSCustomObject]]` for data accumulation
 
 ## Conventions
 

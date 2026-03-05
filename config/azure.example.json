@@ -1,0 +1,25 @@
+{
+    "CredentialDir": "config/credentials",
+    "Environment": "AzureUSGovernment",
+    "TenantID": "00000000-0000-0000-0000-000000000000",
+    "RequiredTags": [
+        { "TagName": "App-name", "DisplayName": "App-name" },
+        { "TagName": "Function", "DisplayName": "Function" },
+        { "TagName": "Impact-level", "DisplayName": "Impact" },
+        { "TagName": "Mission", "DisplayName": "Mission" },
+        { "TagName": "Shutdown", "DisplayName": "Shutdown" },
+        { "TagName": "Startup", "DisplayName": "Startup" }
+    ],
+    "Subscriptions": [
+        {
+            "Name": "Subscription-HUB-Production",
+            "Alias": "HUB",
+            "CredentialFile": "azure-hub.cred.xml"
+        },
+        {
+            "Name": "Subscription-SPOKE-Production",
+            "Alias": "SPOKE",
+            "CredentialFile": "azure-spoke.cred.xml"
+        }
+    ]
+}
