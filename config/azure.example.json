@@ -14,16 +14,16 @@
             "TenantID": "00000000-0000-0000-0000-000000000000",
             "CredentialFile": "azure-tenant1.cred.xml",
             "Subscriptions": [
-                { "Name": "Subscription-HUB-Production", "Alias": "HUB" },
-                { "Name": "Subscription-SPOKE-Production", "Alias": "SPOKE" }
+                { "SubscriptionID": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "Name": "Subscription-HUB-Production", "Alias": "HUB" },
+                { "SubscriptionID": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", "Name": "Subscription-SPOKE-Production", "Alias": "SPOKE" }
             ]
         },
         {
             "TenantID": "11111111-1111-1111-1111-111111111111",
             "CredentialFile": "azure-tenant2.cred.xml",
             "Subscriptions": [
-                { "Name": "Subscription-DEV", "Alias": "DEV" },
-                { "Name": "Subscription-TEST", "Alias": "TEST" }
+                { "SubscriptionID": "cccccccc-cccc-cccc-cccc-cccccccccccc", "Name": "Subscription-DEV", "Alias": "DEV" },
+                { "SubscriptionID": "dddddddd-dddd-dddd-dddd-dddddddddddd", "Name": "Subscription-TEST", "Alias": "TEST" }
             ]
         }
     ]

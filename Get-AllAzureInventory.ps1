@@ -170,12 +170,13 @@ foreach ($tenant in $config.Tenants) {
 
     try {
         foreach ($sub in $tenant.Subscriptions) {
+            $subId = $sub.SubscriptionID
             $subName = $sub.Name
             $subAlias = if ($sub.Alias) { $sub.Alias } else { $subName.Split('-')[1] }
             Write-Host "`nProcessing Subscription: $subAlias ($subName)" -ForegroundColor Cyan
 
             try {
-                Set-AzContext -Subscription $subName -ErrorAction Stop | Out-Null
+                Set-AzContext -Subscription $subId -ErrorAction Stop | Out-Null
 
                 $vms = Get-AzVM -ErrorAction Stop | Sort-Object Name
                 Write-Verbose "  Found $($vms.Count) VM(s) in $subName"
