@@ -1,0 +1,8 @@
+{
+    "CredentialDir": "config/credentials",
+    "CredentialFile": "aws-govcloud.cred.xml",
+    "Regions": [
+        { "Name": "us-gov-west-1", "Alias": "WEST" },
+        { "Name": "us-gov-east-1", "Alias": "EAST" }
+    ]
+}

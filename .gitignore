@@ -12,3 +12,4 @@ legacy/scrubbed/
 *.cred.xml
 config/vcenters.json
 config/azure.json
+config/aws.json

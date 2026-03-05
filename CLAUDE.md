@@ -4,19 +4,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Purpose
 
-This repo contains PowerShell scripts for collecting infrastructure inventory data from VMware vSphere and Azure cloud environments. Legacy scripts are kept for reference; revamped versions are the active codebase.
+This repo contains PowerShell scripts for collecting infrastructure inventory data from VMware vSphere, Azure, and AWS cloud environments. Legacy scripts are kept for reference; revamped versions are the active codebase.
 
 ## Repository Structure
 
 ```
 config/vcenters.json              # vCenter list, credential paths, required tag categories
 config/azure.json                 # Azure subscription list, tenant, required tags
+config/aws.json                   # AWS region list, credential path
 config/credentials/*.cred.xml     # DPAPI-encrypted credential files (per-user, per-machine)
 Initialize-VCenterCredentials.ps1 # One-time setup: prompts for vCenter credentials
 Initialize-AzureCredentials.ps1   # One-time setup: prompts for Azure SP credentials
+Initialize-AWSCredentials.ps1     # One-time setup: prompts for AWS access key credentials
 Get-AllHostInventory.ps1          # Revamped: ESX host inventory collection (per-vCenter .xlsm)
 Get-AllVMInventory.ps1            # Revamped: VM inventory collection (single multi-tab .xlsm)
 Get-AllAzureInventory.ps1         # Revamped: Azure VM inventory collection (single multi-tab .xlsm)
+Get-AllAWSInventory.ps1           # Revamped: AWS EC2 inventory collection (single multi-tab .xlsm)
 Get_All_Host_Inventory.ps1        # Legacy (reference only)
 Get_All_VM_Inventory.ps1          # Legacy (reference only)
 ```
@@ -30,6 +33,9 @@ Get_All_VM_Inventory.ps1          # Legacy (reference only)
 5. For Azure: `Install-Module Az` then edit `config/azure.json` with your subscriptions, tenant ID, and credential filenames
 6. Run `.\Initialize-AzureCredentials.ps1` interactively — prompts for service principal credentials (AppID + ClientSecret)
 7. Schedule `Get-AllAzureInventory.ps1` via Task Scheduler
+8. For AWS: `Install-Module AWS.Tools.Common, AWS.Tools.EC2` then edit `config/aws.json` with your regions and credential filename
+9. Run `.\Initialize-AWSCredentials.ps1` interactively — prompts for AWS access key credentials (AccessKeyID + SecretAccessKey)
+10. Schedule `Get-AllAWSInventory.ps1` via Task Scheduler
 
 ## Architecture
 
@@ -78,8 +84,19 @@ If either field is missing, the Not_Patched tab is skipped. The major version nu
   - **IL5_VMs** — VMs with Impact-level tag = IL5
   - **\<Subscription\>** — One tab per subscription
 
+### AWS EC2 Inventory (Get-AllAWSInventory.ps1)
+- Targets AWS GovCloud regions via access key credentials
+- Produces a **single** `AWSInventory_All.xlsm` workbook with multiple tabs:
+  - **Search** — VBA-powered search UI (searches All_VMs table)
+  - **All_VMs** — Combined EC2 inventory from all regions
+  - **Not_Running** — Instances not in 'running' state
+  - **\<Region\>** — One tab per region (e.g., EAST, WEST)
+
 ### Azure Authentication
 Azure uses service principal credentials (AppID + ClientSecret) stored as DPAPI-encrypted PSCredential files. The PSCredential Username = ApplicationID, Password = ClientSecret. TenantID and Environment are in `config/azure.json`. A single `Connect-AzAccount` session is shared across all subscriptions, with `Set-AzContext` switching per subscription.
+
+### AWS Authentication
+AWS uses access key credentials (AccessKeyID + SecretAccessKey) stored as DPAPI-encrypted PSCredential files. The PSCredential Username = Access Key ID, Password = Secret Access Key. Regions are configured in `config/aws.json`. Credentials are loaded once via `Set-AWSCredential` and `Set-DefaultAWSRegion` switches per region.
 
 ### Tag Configuration
 vSphere tag categories follow the naming pattern `{TagPrefix}-{TagEnvironment}-{Category}` (e.g., `vCenter-Prod-App-Name`). The JSON config defines:
