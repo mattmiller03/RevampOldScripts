@@ -1,22 +1,22 @@
-#JN 12/11/2019 This version of the srcipt was copied from vs346 and modified to run on the new Windows 2016 jump server
-#   only change was from D Drive to E Drive (D: > E:) in multiple locations, working out of Task Scheduler for limited vCenters
+# Author MM/DD/YYYY This version of the srcipt was copied from previous server and modified to run on the new management server
+#   only change was from D Drive to E Drive (D: > D:) in multiple locations, working out of Task Scheduler for limited vCenters
 
-# This script will run against all the vCenters defined by $vcs, this must be run using a DIR M account
+# This script will run against all the vCenters defined by $vcs, this must be run using a service account
 #  The following line creates a output of the commands executed during the script processing
-start-transcript -path E:\Script_Output\ESX_HostInventoryFiles\Get_All_Host_Inventory.txt
+start-transcript -path D:\Script_Output\ESX_HostInventoryFiles\Get_All_Host_Inventory.txt
 
 #Declare some variables
 $date = (Get-Date).ToString("HH:mm:ss MM-dd-yy")
 write-host "Start of Get_All_Host_Inventory.ps1..." $date
 
-#List of all vCenters, HAWAII vCenter hnl1s-ph1005v not working 
-   $vcs =  "e:\listofVcenterServers.csv"
+#List of all vCenters, remote site vCenter not reachable 
+   $vcs =  "D:\listofVcenterServers.csv"
 
 
 #Function to do some file cleanup from previous runs
 Function TestForFiles{
-	    $Sourcefile = "E:\ESX_HostInventory_$vc.csv"
-	    $Destinationfile = "E:\ESX_HostInventory_$vc.csv"
+	    $Sourcefile = "D:\ESX_HostInventory_$vc.csv"
+	    $Destinationfile = "D:\ESX_HostInventory_$vc.csv"
 
 	If ((Test-Path $Destinationfile) -eq $false)  {
 		write-host "No destination file exists"
@@ -52,15 +52,15 @@ foreach ($vc in $vcs) {
 	write-host "Running Get_HostInventory on $vc"
 	#Clean up from previous execution of this script
 	TestForFiles $vc
-	if ($vc -eq "vcentername1") {
-        $creds = Get-VICredentialStoreItem -Host vcentername1
+	if ($vc -eq "vcenter01.corp.example.com") {
+        $creds = Get-VICredentialStoreItem -Host vcenter01.corp.example.com
 		connect-viserver -Server $vc -User $creds.User -Password $creds.password
     }
-	elseif ($vc -eq "vcentername2") {
-        $creds = Get-VICredentialStoreItem -Host vcentername2 
+	elseif ($vc -eq "vcenter02.corp.example.com") {
+        $creds = Get-VICredentialStoreItem -Host vcenter02.corp.example.com 
 		connect-viserver -Server $vc -User $creds.User -Password $creds.password
     }
-    elseif ($vc -eq "vcentername3") {
+    elseif ($vc -eq "vcenter03.corp.example.com") {
 		$creds = Get-VICredentialStoreItem -Host 
 	    connect-viserver -server $vc
 	}
@@ -69,10 +69,10 @@ foreach ($vc in $vcs) {
         exit
 	} #End of IF/ELSEIF/ELSE tests
     
-	E:\Scripts\Get_HostInventory.ps1 > $null
+	D:\Scripts\Get_HostInventory.ps1 > $null
     
     #Rename output file to include the hostname of vCenter
-    move E:\ESX_HostInventory.csv E:\ESX_HostInventory_$vc.csv
+    move D:\ESX_HostInventory.csv D:\ESX_HostInventory_$vc.csv
     
 	Disconnect-viServer -Server * -Confirm:$false
 } #End of foreach loop
