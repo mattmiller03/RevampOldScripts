@@ -1,6 +1,8 @@
 {
     "CredentialDir": "config/credentials",
     "TagPrefix": "vCenter",
+    "TargetESXiVersion": "8.0.3",
+    "TargetESXiBuild": "24322831",
     "RequiredTags": [
         { "Category": "App-Name", "DisplayName": "Application", "Columns": 2 },
         { "Category": "Function", "DisplayName": "Function", "Columns": 1 },

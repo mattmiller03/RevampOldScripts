@@ -31,8 +31,14 @@ Get_All_VM_Inventory.ps1          # Legacy (reference only)
 Credentials are stored as DPAPI-encrypted XML files via PowerShell's `Export-Clixml` / `Import-Clixml`. No extra modules required — encryption is tied to the current Windows user account and machine. The `config/credentials/` directory holds one `.cred.xml` file per vCenter.
 
 ### Host Inventory (Get-AllHostInventory.ps1)
-- Produces one `.xlsm` workbook per vCenter with Search tab and HostInventory data tab
-- Same collect/export pattern as before
+- Produces one `.xlsm` workbook per vCenter with multiple tabs:
+  - **Search** — VBA-powered search UI
+  - **All_Hosts** — Combined host inventory from all vCenters
+  - **NOT_SecureBoot** — Hosts without Secure Boot enabled
+  - **Not_Patched** — Hosts not on the target ESXi version/build (requires `TargetESXiVersion`/`TargetESXiBuild` in config)
+  - **Not_Connected** — Hosts not in Connected state
+  - **Not_On_ESX_\<N\>** — Hosts not on the target major ESXi version
+  - **\<vCenter name\>** — One tab per vCenter with that vCenter's hosts
 
 ### VM Inventory (Get-AllVMInventory.ps1)
 - Produces a **single** `VMInventory_All.xlsm` workbook with multiple tabs:
@@ -41,7 +47,18 @@ Credentials are stored as DPAPI-encrypted XML files via PowerShell's `Export-Cli
   - **MissingTags** — VMs missing any required tag category (configured in JSON)
   - **VM_BIOS** — VMs using BIOS firmware (not EFI)
   - **VMs_Powered_Off** — VMs in PoweredOff state
+  - **CPU_HotAdd_FALSE** — VMs with CPU Hot Add disabled
+  - **Memory_HotAdd_FALSE** — VMs with Memory Hot Add disabled
+  - **VMToolsVersion** — VMs not on the latest VMware Tools version
+  - **FloppyDrives** — VMs with a floppy drive attached
   - **\<vCenter name\>** — One tab per vCenter with that vCenter's VMs
+
+### ESXi Target Version (Host Inventory)
+The host inventory script uses two optional config fields to populate the **Not_Patched** tab:
+- `TargetESXiVersion` — expected ESXi version string (e.g., `"8.0.3"`)
+- `TargetESXiBuild` — expected ESXi build number (e.g., `"24322831"`)
+
+If either field is missing, the Not_Patched tab is skipped. The major version number (first segment) is also used for the **Not_On_ESX_\<N\>** tab.
 
 ### Tag Configuration
 vSphere tag categories follow the naming pattern `{TagPrefix}-{TagEnvironment}-{Category}` (e.g., `vCenter-Prod-App-Name`). The JSON config defines:
