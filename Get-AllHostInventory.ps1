@@ -195,6 +195,7 @@ foreach ($vc in $config.VCenters) {
         Write-Verbose "  Found $($vmHosts.Count) host(s) on $vcName"
 
         $vcVersion = $connection.Version
+        $vcBuild = $connection.Build
         $vcInventory = foreach ($vmHost in $vmHosts) {
             Write-Verbose "    Processing host: $($vmHost.Name)"
             $hostView = Get-View -VIObject $vmHost -Property Config, Hardware, Runtime, Summary, Network
@@ -254,8 +255,20 @@ foreach ($vc in $config.VCenters) {
             $shellEnabled = ($services | Where-Object { $_.Key -eq 'TSM' }).Running
             $dcuiEnabled = ($services | Where-Object { $_.Key -eq 'DCUI' }).Running
 
+            # ESXCLI (used for dump collector and SecureBoot fallback)
+            $esxcli = $null
+            try {
+                $esxcli = Get-EsxCli -VMHost $vmHost -V2 -ErrorAction Stop
+            }
+            catch {
+                Write-Verbose "  Could not get ESXCLI for $($vmHost.Name): $_"
+            }
+
             # Dump collector
-            $dumpCollector = ($advSettings | Where-Object { $_.Name -eq 'VMkernel.Boot.netDumpAddr' }).Value
+            $dumpCollector = ''
+            if ($esxcli) {
+                try { $dumpCollector = $esxcli.system.coredump.network.get.Invoke().NetworkServerIP } catch {}
+            }
 
             # Uptime
             $bootTime = $hostView.Runtime.BootTime
@@ -298,22 +311,24 @@ foreach ($vc in $config.VCenters) {
             # Custom attributes
             $customAttribs = Get-Annotation -Entity $vmHost -ErrorAction SilentlyContinue
             $ebsNumber = ($customAttribs | Where-Object { $_.Name -eq 'EBS_Number' }).Value
-            $dlaAsset = ($customAttribs | Where-Object { $_.Name -eq 'DLA_Asset' }).Value
+            $dlaAsset = ($customAttribs | Where-Object { $_.Name -eq 'DLA_Asset_Number' }).Value
             $siteLocation = ($customAttribs | Where-Object { $_.Name -eq 'Site_Location' }).Value
 
-            # Secure boot and TPM
+            # Secure boot
             $secureBoot = $false
-            $tpmSupport = $false
-            $tpmVersion = ''
             if ($hostView.Runtime.BootInfo) {
                 $secureBoot = [bool]$hostView.Runtime.BootInfo.SecureBoot
             }
-            $tpmPcrValues = $hostView.Runtime.TpmPcrValues
-            if ($tpmPcrValues) {
-                $tpmSupport = $true
-                $hasSha256 = $tpmPcrValues | Where-Object { $_.DigestMethod -eq 'SHA256' }
-                $tpmVersion = if ($hasSha256) { '2.0' } else { '1.2' }
+            if (-not $secureBoot -and $esxcli) {
+                try {
+                    $secureBoot = $esxcli.system.settings.encryption.get.Invoke().RequireSecureBoot
+                }
+                catch {
+                    Write-Verbose "  ESXCLI SecureBoot check failed for $($vmHost.Name): $_"
+                }
             }
+            $tpmSupport = $vmHost.ExtensionData.Capability.TpmSupported
+            $tpmVersion = $vmHost.ExtensionData.Capability.TpmVersion
 
             [PSCustomObject]@{
                 'Name'                       = $vmHost.Name
@@ -344,12 +359,9 @@ foreach ($vc in $config.VCenters) {
                 'DataCenter'                 = (Get-Datacenter -VMHost $vmHost -ErrorAction SilentlyContinue).Name
                 'vCenter Server'             = $vcName
                 'vCenter Version'            = $vcVersion
+                'vCenter Build'              = $vcBuild
                 'ConnectionState'            = $vmHost.ConnectionState
-                'Esxi-Status'                = switch ($vmHost.ConnectionState) {
-                    'Connected'     { 'Green' }
-                    'Maintenance'   { 'Yellow' }
-                    default         { 'Red' }
-                }
+                'Esxi-Status'                = $vmHost.ExtensionData.Summary.OverallStatus
                 'Physical-NICs'              = $pNics
                 'ESXi Shell-Enabled'         = $shellEnabled
                 'SSH-Enabled'                = $sshEnabled
@@ -402,21 +414,22 @@ Write-Host "`nBuilding combined workbook..." -ForegroundColor Cyan
 # Conditional formatting rules
 $hostCfRules = @(
     # Red: SSH enabled
-    New-ConditionalText -Text 'True' -Range 'AG:AG' -BackgroundColor Red -ConditionalTextColor White
+    New-ConditionalText -Text 'True' -Range 'AH:AH' -BackgroundColor Red -ConditionalTextColor White
     # Red: ESXi Shell enabled
-    New-ConditionalText -Text 'True' -Range 'AF:AF' -BackgroundColor Red -ConditionalTextColor White
+    New-ConditionalText -Text 'True' -Range 'AG:AG' -BackgroundColor Red -ConditionalTextColor White
     # Red: ConnectionState issues
-    New-ConditionalText -Text 'Disconnected' -Range 'AC:AC' -BackgroundColor Red -ConditionalTextColor White
-    New-ConditionalText -Text 'NotResponding' -Range 'AC:AC' -BackgroundColor Red -ConditionalTextColor White
-    # Esxi-Status color indicators
-    New-ConditionalText -Text 'Red' -Range 'AD:AD' -BackgroundColor Red -ConditionalTextColor White
-    New-ConditionalText -Text 'Yellow' -Range 'AD:AD' -BackgroundColor Yellow
-    New-ConditionalText -Text 'Green' -Range 'AD:AD' -BackgroundColor Green -ConditionalTextColor White
+    New-ConditionalText -Text 'Disconnected' -Range 'AD:AD' -BackgroundColor Red -ConditionalTextColor White
+    New-ConditionalText -Text 'NotResponding' -Range 'AD:AD' -BackgroundColor Red -ConditionalTextColor White
+    # Esxi-Status color indicators (vSphere OverallStatus values)
+    New-ConditionalText -Text 'red' -Range 'AE:AE' -BackgroundColor Red -ConditionalTextColor White
+    New-ConditionalText -Text 'yellow' -Range 'AE:AE' -BackgroundColor Yellow
+    New-ConditionalText -Text 'green' -Range 'AE:AE' -BackgroundColor Green -ConditionalTextColor White
+    New-ConditionalText -Text 'gray' -Range 'AE:AE' -BackgroundColor LightGray
     # Yellow: PowerState not PoweredOn
     New-ConditionalText -Text 'Standby' -Range 'F:F' -BackgroundColor Yellow
     New-ConditionalText -Text 'PoweredOff' -Range 'F:F' -BackgroundColor Yellow
     # Yellow: Maintenance mode
-    New-ConditionalText -Text 'Maintenance' -Range 'AC:AC' -BackgroundColor Yellow
+    New-ConditionalText -Text 'Maintenance' -Range 'AD:AD' -BackgroundColor Yellow
 )
 
 # Temp xlsm accumulates all sheets before the Search tab is added
@@ -431,6 +444,71 @@ if ($allHostsData.Count -gt 0) {
 }
 else {
     Export-Excel -Path $tempXlsm -WorksheetName 'All_Hosts' -InputObject $null
+}
+
+# Filtered views
+$notSecureBoot = @($allHostsData | Where-Object { $_.SecureBoot -eq $false })
+$notConnected = @($allHostsData | Where-Object { $_.ConnectionState -ne 'Connected' })
+
+$targetVersion = $config.TargetESXiVersion
+$targetBuild = $config.TargetESXiBuild
+$targetMajor = if ($targetVersion) { "$($targetVersion.Split('.')[0])*" } else { '8*' }
+
+$notPatched = @()
+if ($targetVersion -and $targetBuild) {
+    $notPatched = @($allHostsData | Where-Object {
+        $_.'ESXi-Version' -ne $targetVersion -or $_.'Build-Version' -ne $targetBuild
+    })
+}
+
+$notCurrentMajor = @($allHostsData | Where-Object {
+    $_.'ESXi-Version' -notlike $targetMajor -and $_.ConnectionState -ne 'NotResponding'
+})
+
+# NOT_SecureBoot tab
+if ($notSecureBoot.Count -gt 0) {
+    $notSecureBoot | Export-Excel -Path $tempXlsm -WorksheetName 'NOT_SecureBoot' `
+        -AutoSize -FreezeTopRow -BoldTopRow -ConditionalText $hostCfRules `
+        -TableName 'NOT_SecureBoot' -TableStyle Medium9
+}
+else {
+    Export-Excel -Path $tempXlsm -WorksheetName 'NOT_SecureBoot' -InputObject $null
+}
+
+# Not_Patched tab
+if ($targetVersion -and $targetBuild) {
+    if ($notPatched.Count -gt 0) {
+        $notPatched | Export-Excel -Path $tempXlsm -WorksheetName 'Not_Patched' `
+            -AutoSize -FreezeTopRow -BoldTopRow -ConditionalText $hostCfRules `
+            -TableName 'Not_Patched' -TableStyle Medium9
+    }
+    else {
+        Export-Excel -Path $tempXlsm -WorksheetName 'Not_Patched' -InputObject $null
+    }
+}
+else {
+    Write-Warning "TargetESXiVersion/TargetESXiBuild not set in config — skipping Not_Patched tab."
+}
+
+# Not_Connected tab
+if ($notConnected.Count -gt 0) {
+    $notConnected | Export-Excel -Path $tempXlsm -WorksheetName 'Not_Connected' `
+        -AutoSize -FreezeTopRow -BoldTopRow -ConditionalText $hostCfRules `
+        -TableName 'Not_Connected' -TableStyle Medium9
+}
+else {
+    Export-Excel -Path $tempXlsm -WorksheetName 'Not_Connected' -InputObject $null
+}
+
+# Not on current major ESXi version
+$notMajorTabName = "Not_On_ESX_$($targetMajor.TrimEnd('*'))"
+if ($notCurrentMajor.Count -gt 0) {
+    $notCurrentMajor | Export-Excel -Path $tempXlsm -WorksheetName $notMajorTabName `
+        -AutoSize -FreezeTopRow -BoldTopRow -ConditionalText $hostCfRules `
+        -TableName ($notMajorTabName -replace '[^A-Za-z0-9_]', '_') -TableStyle Medium9
+}
+else {
+    Export-Excel -Path $tempXlsm -WorksheetName $notMajorTabName -InputObject $null
 }
 
 # Per-vCenter tabs

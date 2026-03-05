@@ -182,11 +182,81 @@ foreach ($vc in $config.VCenters) {
         # Collect VM inventory
         Write-Host "  Collecting VM inventory..." -ForegroundColor Gray
         $allVMs = Get-VM -Server $connection -ErrorAction Stop
-        Write-Verbose "  Found $($allVMs.Count) VM(s) on $vcName"
+        # Filter out gray-status (disconnected/orphaned) VMs
+        $allVMs = @($allVMs | Where-Object { $_.ExtensionData.Summary.OverallStatus -ne 'gray' })
+        Write-Verbose "  Found $($allVMs.Count) VM(s) on $vcName (after filtering gray status)"
 
         $inventoryData = foreach ($vm in $allVMs) {
             Write-Verbose "    Processing VM: $($vm.Name)"
             $vmView = Get-View -VIObject $vm -Property Config, Guest, Runtime, Summary
+
+            # Template — collect only basic properties
+            if ($vmView.Config.Template) {
+                $tProps = [ordered]@{
+                    'Name'                    = $vm.Name
+                    'PowerState'              = $vmView.Summary.Runtime.PowerState
+                    'Cluster'                 = ''
+                    'Configured_Guest_OS'     = $vmView.Config.GuestFullName
+                    'Running_Guest_OS'        = $vmView.Guest.GuestFullName
+                    'Notes'                   = ''
+                    'Floppydrive'             = $false
+                    'USB Controller'          = $false
+                    'No USB Cont'             = 0
+                    'Needs Disk Consolidated' = $false
+                    'NumCpu'                  = $vmView.Summary.Config.NumCpu
+                    'CPU Hot Add'             = $vmView.Config.CpuHotAddEnabled
+                    'Memory GB'               = [math]::Round($vmView.Summary.Config.MemorySizeMB / 1024, 2)
+                    'Memory Hot Add'          = $vmView.Config.MemoryHotAddEnabled
+                    'Hardware Version'        = $vmView.Config.Version
+                    'VMTools Status'          = ''
+                    'Datacenter'              = ''
+                    'CD Drive'                = $false
+                    'CD Connected'            = $false
+                    'Template'                = $true
+                    'IP #1'                   = ''
+                    'IP #2'                   = ''
+                    'IP #3'                   = ''
+                    '1st vNic Type'           = ''
+                    '2nd vNic Type'           = ''
+                    '3rd vNic Type'           = ''
+                    '4th vNic Type'           = ''
+                    '5th vNic Type'           = ''
+                    'VMTools Version'         = $vmView.Summary.Guest.ToolsVersionStatus
+                    'Disk1'                   = ''
+                    'Disk2'                   = ''
+                    'Disk3'                   = ''
+                    'Disk4'                   = ''
+                    'Disk5'                   = ''
+                    'Disk6'                   = ''
+                    'Disk7'                   = ''
+                    'Disk8'                   = ''
+                    'Disk9'                   = ''
+                    'Disk10'                  = ''
+                    'Disk11'                  = ''
+                    'Disk12'                  = ''
+                    'vCenter'                 = $vcName
+                    'Firmware'                = $vmView.Config.Firmware
+                    'NestedHVEnabled'         = $false
+                    'EfiSecureBootEnabled'    = $false
+                    'VvtdEnabled'             = $false
+                    'VbsEnabled'              = $false
+                    'Guest Hostname'          = ''
+                }
+                # Add empty tag columns for consistent headers
+                foreach ($tagDef in $config.RequiredTags) {
+                    for ($t = 0; $t -lt $tagDef.Columns; $t++) {
+                        $suffix = if ($tagDef.Columns -gt 1) { ($t + 1) } else { '' }
+                        $tProps["$($tagDef.DisplayName)_Tag$suffix"] = ''
+                    }
+                }
+                $tProps['Change_Number'] = ''
+                $tProps['vTPM'] = $false
+                $tProps['ResourcePool'] = ''
+                $tProps['FolderName'] = ''
+                $tProps['LastBackup'] = ''
+                [PSCustomObject]$tProps
+                continue
+            }
 
             # Guest OS
             $configuredOS = $vmView.Config.GuestFullName
@@ -216,10 +286,19 @@ foreach ($vc in $config.VCenters) {
 
             # VMTools
             $toolsStatus = $vmView.Guest.ToolsStatus
-            $toolsVersion = $vmView.Guest.ToolsVersion
 
-            # Template
-            $isTemplate = $vm.ExtensionData.Config.Template
+            # VMTools version — descriptive string based on status
+            $toolsVersionStatus = $vmView.Guest.ToolsVersionStatus
+            $toolsVersion = switch ($toolsVersionStatus) {
+                'guestToolsNotInstalled' { 'VMTools Not Installed' }
+                'guestToolsUnmanaged'    { 'Guest Managed' }
+                'guestToolsCurrent'      { $vmView.Guest.ToolsVersion }
+                'guestToolsNeedUpgrade'  { $vmView.Guest.ToolsVersion }
+                default                  { $vmView.Guest.ToolsVersion }
+            }
+            if ($vm.PowerState -eq 'PoweredOff' -and $configuredOS -like '*Windows*') {
+                $toolsVersion = 'Windows VM Powered Off'
+            }
 
             # IP addresses (up to 3)
             $guestNics = $vmView.Guest.Net
@@ -256,12 +335,18 @@ foreach ($vc in $config.VCenters) {
             $firmware = $vmView.Config.Firmware
             $nestedHV = $vmView.Config.NestedHVEnabled
             $efiSecureBoot = $vmView.Config.BootOptions.EfiSecureBootEnabled
-            $vvtd = $vmView.Config.VvtdEnabled
-            $vbs = $vmView.Config.VbsEnabled
+            $vvtd = $vmView.Config.Flags.VvtdEnabled
+            $vbs = $vmView.Config.Flags.VbsEnabled
 
-            # Hostname vs VM name comparison — show actual hostname when it differs
+            # Hostname vs VM name comparison — strip domain before comparing
             $guestHostname = $vmView.Guest.HostName
-            $nameNotEqual = if ($guestHostname -and $guestHostname -ne $vm.Name) { $guestHostname } else { '' }
+            if ($guestHostname) {
+                $shortName = $guestHostname.Split('.')[0]
+                $nameNotEqual = if ($shortName -ne $vm.Name) { $guestHostname } else { '' }
+            }
+            else {
+                $nameNotEqual = 'NO hostname returned from vm'
+            }
 
             # vTPM
             $vtpm = $null -ne ($devices | Where-Object { $_ -is [VMware.Vim.VirtualTPM] })
@@ -319,7 +404,7 @@ foreach ($vc in $config.VCenters) {
                 'Datacenter'              = if ($vmDatacenter) { $vmDatacenter.Name } else { '' }
                 'CD Drive'                = $cdDrivePresent
                 'CD Connected'            = $cdConnected
-                'Template'                = $isTemplate
+                'Template'                = $false
                 'IP #1'                   = $ips[0]
                 'IP #2'                   = $ips[1]
                 'IP #3'                   = $ips[2]
@@ -451,6 +536,28 @@ $missingTagsData = foreach ($vm in $allInventoryData) {
 
 $vmBiosData = @($allInventoryData | Where-Object { $_.Firmware -eq 'bios' })
 $poweredOffData = @($allInventoryData | Where-Object { $_.PowerState -eq 'PoweredOff' })
+$cpuHotAddFalse = @($allInventoryData | Where-Object { $_.'CPU Hot Add' -eq $false })
+$memHotAddFalse = @($allInventoryData | Where-Object { $_.'Memory Hot Add' -eq $false })
+$floppyDriveVMs = @($allInventoryData | Where-Object { $_.Floppydrive -eq $true })
+
+# VMTools version — find latest numeric version and filter VMs not on it
+$toolsVersionList = @($allInventoryData.'VMTools Version' | Select-Object -Unique |
+    Where-Object { $_ -match '^\d[\d.]*$' })
+$latestToolsVersion = ''
+if ($toolsVersionList.Count -gt 0) {
+    try {
+        $latestToolsVersion = [string]($toolsVersionList |
+            ForEach-Object { [version]$_ } | Sort-Object -Descending | Select-Object -First 1)
+    }
+    catch {
+        $latestToolsVersion = ($toolsVersionList | Sort-Object -Descending | Select-Object -First 1)
+    }
+}
+$vmToolsOutdated = if ($latestToolsVersion) {
+    @($allInventoryData | Where-Object {
+        $_.'VMTools Version' -ne $latestToolsVersion -and $_.'VMTools Version' -match '^\d[\d.]*$'
+    })
+} else { @() }
 
 # Conditional formatting rules (column letters will be set based on actual data)
 $vmCfRules = @(
@@ -529,6 +636,46 @@ foreach ($vcName in $perVCenterData.Keys) {
     else {
         Export-Excel -Path $tempXlsx -WorksheetName $tabName -InputObject $null
     }
+}
+
+# CPU Hot Add FALSE
+if ($cpuHotAddFalse.Count -gt 0) {
+    $cpuHotAddFalse | Export-Excel -Path $tempXlsx -WorksheetName 'CPU_HotAdd_FALSE' `
+        -AutoSize -FreezeTopRow -BoldTopRow -ConditionalText $vmCfRules `
+        -TableName 'CPU_HotAdd_FALSE' -TableStyle Medium9
+}
+else {
+    Export-Excel -Path $tempXlsx -WorksheetName 'CPU_HotAdd_FALSE' -InputObject $null
+}
+
+# Memory Hot Add FALSE
+if ($memHotAddFalse.Count -gt 0) {
+    $memHotAddFalse | Export-Excel -Path $tempXlsx -WorksheetName 'Memory_HotAdd_FALSE' `
+        -AutoSize -FreezeTopRow -BoldTopRow -ConditionalText $vmCfRules `
+        -TableName 'Memory_HotAdd_FALSE' -TableStyle Medium9
+}
+else {
+    Export-Excel -Path $tempXlsx -WorksheetName 'Memory_HotAdd_FALSE' -InputObject $null
+}
+
+# VMTools Version — VMs not on the latest tools version
+if ($vmToolsOutdated.Count -gt 0) {
+    $vmToolsOutdated | Export-Excel -Path $tempXlsx -WorksheetName 'VMToolsVersion' `
+        -AutoSize -FreezeTopRow -BoldTopRow -ConditionalText $vmCfRules `
+        -TableName 'VMToolsVersion' -TableStyle Medium9
+}
+else {
+    Export-Excel -Path $tempXlsx -WorksheetName 'VMToolsVersion' -InputObject $null
+}
+
+# Floppy Drives
+if ($floppyDriveVMs.Count -gt 0) {
+    $floppyDriveVMs | Export-Excel -Path $tempXlsx -WorksheetName 'FloppyDrives' `
+        -AutoSize -FreezeTopRow -BoldTopRow -ConditionalText $vmCfRules `
+        -TableName 'FloppyDrives' -TableStyle Medium9
+}
+else {
+    Export-Excel -Path $tempXlsx -WorksheetName 'FloppyDrives' -InputObject $null
 }
 
 #endregion Build Workbook
@@ -693,6 +840,10 @@ Write-Host "    All_VMs          : $($allInventoryData.Count) VM(s)" -Foreground
 Write-Host "    MissingTags      : $(@($missingTagsData).Count) VM(s)" -ForegroundColor Gray
 Write-Host "    VM_BIOS          : $($vmBiosData.Count) VM(s)" -ForegroundColor Gray
 Write-Host "    VMs_Powered_Off  : $($poweredOffData.Count) VM(s)" -ForegroundColor Gray
+Write-Host "    CPU_HotAdd_FALSE : $($cpuHotAddFalse.Count) VM(s)" -ForegroundColor Gray
+Write-Host "    Memory_HotAdd_FALSE: $($memHotAddFalse.Count) VM(s)" -ForegroundColor Gray
+Write-Host "    VMToolsVersion   : $($vmToolsOutdated.Count) VM(s) (latest: $latestToolsVersion)" -ForegroundColor Gray
+Write-Host "    FloppyDrives     : $($floppyDriveVMs.Count) VM(s)" -ForegroundColor Gray
 foreach ($vcName in $perVCenterData.Keys) {
     Write-Host "    $vcName : $($perVCenterData[$vcName].Count) VM(s)" -ForegroundColor Gray
 }
