@@ -8,15 +8,14 @@ try {
     var invoke = System.getModule("com.vmware.library.powershell");
 
     // Start the script as a background job via pwsh.exe, tee output to a log file
-    var startCmd = [
-        '$logFile = "' + logFile.replace(/\\/g, "\\\\") + '"',
-        'Remove-Item -Path $logFile -Force -ErrorAction SilentlyContinue',
-        '$proc = Start-Process -FilePath "C:\\Program Files\\PowerShell\\7\\pwsh.exe"',
-        '  -ArgumentList @("-NoProfile", "-NonInteractive", "-File", "' + ScriptPath.replace(/\\/g, "\\\\") + '")',
-        '  -RedirectStandardOutput $logFile',
-        '  -PassThru -NoNewWindow',
-        '$proc.Id'
-    ].join(" ");
+    var escapedLog = logFile.replace(/\\/g, "\\\\");
+    var escapedScript = ScriptPath.replace(/\\/g, "\\\\");
+    var startCmd = '$logFile = "' + escapedLog + '"; '
+        + 'Remove-Item -Path $logFile -Force -ErrorAction SilentlyContinue; '
+        + '$proc = Start-Process -FilePath "C:\\Program Files\\PowerShell\\7\\pwsh.exe" '
+        + '-ArgumentList @("-NoProfile","-NonInteractive","-File","' + escapedScript + '") '
+        + '-RedirectStandardOutput $logFile -PassThru -NoNewWindow; '
+        + '$proc.Id';
 
     var pidResult = invoke.invokeScript(host, startCmd, session.getSessionId());
     var pid = pidResult.toString().trim();
@@ -35,15 +34,11 @@ try {
         running = (isRunning.toString().trim().toLowerCase() === "true");
 
         // Read any new lines from the log file
-        var readCmd = [
-            '$f = "' + logFile.replace(/\\/g, "\\\\") + '"',
-            'if (Test-Path $f) {',
-            '  $lines = @(Get-Content $f)',
-            '  if ($lines.Count -gt ' + lastLineCount + ') {',
-            '    $lines[' + lastLineCount + '..($lines.Count - 1)] -join "`n"',
-            '  } else { "" }',
-            '} else { "" }'
-        ].join(" ");
+        var readCmd = '$f = "' + escapedLog + '"; '
+            + 'if (Test-Path $f) { $lines = @(Get-Content $f); '
+            + 'if ($lines.Count -gt ' + lastLineCount + ') { '
+            + '$lines[' + lastLineCount + '..($lines.Count - 1)] -join "`n" '
+            + '} else { "" } } else { "" }';
 
         var newOutput = invoke.invokeScript(host, readCmd, session.getSessionId());
         var newText = newOutput.toString().trim();
@@ -61,15 +56,11 @@ try {
     }
 
     // Final read to catch any remaining output
-    var finalCmd = [
-        '$f = "' + logFile.replace(/\\/g, "\\\\") + '"',
-        'if (Test-Path $f) {',
-        '  $lines = @(Get-Content $f)',
-        '  if ($lines.Count -gt ' + lastLineCount + ') {',
-        '    $lines[' + lastLineCount + '..($lines.Count - 1)] -join "`n"',
-        '  } else { "" }',
-        '} else { "" }'
-    ].join(" ");
+    var finalCmd = '$f = "' + escapedLog + '"; '
+        + 'if (Test-Path $f) { $lines = @(Get-Content $f); '
+        + 'if ($lines.Count -gt ' + lastLineCount + ') { '
+        + '$lines[' + lastLineCount + '..($lines.Count - 1)] -join "`n" '
+        + '} else { "" } } else { "" }';
 
     var finalOutput = invoke.invokeScript(host, finalCmd, session.getSessionId());
     var finalText = finalOutput.toString().trim();
@@ -81,10 +72,8 @@ try {
     }
 
     // Check exit code
-    var exitCmd = [
-        '$f = "' + logFile.replace(/\\/g, "\\\\") + '"',
-        'if (Test-Path $f) { Get-Content $f -Tail 5 } else { "no log found" }'
-    ].join("; ");
+    var exitCmd = '$f = "' + escapedLog + '"; '
+        + 'if (Test-Path $f) { Get-Content $f -Tail 5 } else { "no log found" }';
     output = invoke.invokeScript(host, exitCmd, session.getSessionId());
 
     System.log("Script execution completed.");
