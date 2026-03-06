@@ -1,32 +1,96 @@
 var output;
 var session;
-
-//This will get the password that is used for vCenter
-var category = Server.getConfigurationElementCategoryWithPath("DLAconfigs");
-
-for each (var configuration in category.configurationElements) {
-	if (configuration.name == "vCenter Creds") {
-		var vCenterPassword = configuration.getAttributeWithKey("password").value;
-	}
-}
-
-//This will get the password that is used for svc_vrapsh
-var category = Server.getConfigurationElementCategoryWithPath("RussConfigs");
-
-for each (var configuration in category.configurationElements) {
-    if (configuration.name == "PSH_vrapsh") {
-		var vraPassword = configuration.getAttributeWithKey("password").value;
-	}
-}
-
-var arguments = vCenterPassword + " " + vraPassword;
+var pollInterval = 10; // seconds between progress checks
+var logFile = ScriptPath.replace(/\.ps1$/i, "_progress.log");
 
 try {
-	session = host.openSession();
-	var script =  '& "' + ScriptPath + '" ' + arguments;
-	output = System.getModule("com.vmware.library.powershell").invokeScript(host,script,session.getSessionId());
+    session = host.openSession();
+    var invoke = System.getModule("com.vmware.library.powershell");
+
+    // Start the script as a background job via pwsh.exe, tee output to a log file
+    var startCmd = [
+        '$logFile = "' + logFile.replace(/\\/g, "\\\\") + '"',
+        'Remove-Item -Path $logFile -Force -ErrorAction SilentlyContinue',
+        '$proc = Start-Process -FilePath "C:\\Program Files\\PowerShell\\7\\pwsh.exe"',
+        '  -ArgumentList @("-NoProfile", "-NonInteractive", "-File", "' + ScriptPath.replace(/\\/g, "\\\\") + '")',
+        '  -RedirectStandardOutput $logFile',
+        '  -PassThru -NoNewWindow',
+        '$proc.Id'
+    ].join(" ");
+
+    var pidResult = invoke.invokeScript(host, startCmd, session.getSessionId());
+    var pid = pidResult.toString().trim();
+    System.log("Script started as PID " + pid + ", polling progress...");
+
+    // Poll the log file for new output until the process exits
+    var lastLineCount = 0;
+    var running = true;
+
+    while (running) {
+        System.sleep(pollInterval * 1000);
+
+        // Check if process is still running
+        var checkCmd = '(Get-Process -Id ' + pid + ' -ErrorAction SilentlyContinue) -ne $null';
+        var isRunning = invoke.invokeScript(host, checkCmd, session.getSessionId());
+        running = (isRunning.toString().trim().toLowerCase() === "true");
+
+        // Read any new lines from the log file
+        var readCmd = [
+            '$f = "' + logFile.replace(/\\/g, "\\\\") + '"',
+            'if (Test-Path $f) {',
+            '  $lines = @(Get-Content $f)',
+            '  if ($lines.Count -gt ' + lastLineCount + ') {',
+            '    $lines[' + lastLineCount + '..($lines.Count - 1)] -join "`n"',
+            '  } else { "" }',
+            '} else { "" }'
+        ].join(" ");
+
+        var newOutput = invoke.invokeScript(host, readCmd, session.getSessionId());
+        var newText = newOutput.toString().trim();
+
+        if (newText.length > 0) {
+            // Count new lines and update offset
+            var newLines = newText.split("\n");
+            lastLineCount += newLines.length;
+
+            // Relay each line to the Aria workflow log
+            for (var i = 0; i < newLines.length; i++) {
+                System.log(newLines[i]);
+            }
+        }
+    }
+
+    // Final read to catch any remaining output
+    var finalCmd = [
+        '$f = "' + logFile.replace(/\\/g, "\\\\") + '"',
+        'if (Test-Path $f) {',
+        '  $lines = @(Get-Content $f)',
+        '  if ($lines.Count -gt ' + lastLineCount + ') {',
+        '    $lines[' + lastLineCount + '..($lines.Count - 1)] -join "`n"',
+        '  } else { "" }',
+        '} else { "" }'
+    ].join(" ");
+
+    var finalOutput = invoke.invokeScript(host, finalCmd, session.getSessionId());
+    var finalText = finalOutput.toString().trim();
+    if (finalText.length > 0) {
+        var finalLines = finalText.split("\n");
+        for (var j = 0; j < finalLines.length; j++) {
+            System.log(finalLines[j]);
+        }
+    }
+
+    // Check exit code
+    var exitCmd = [
+        '$f = "' + logFile.replace(/\\/g, "\\\\") + '"',
+        'if (Test-Path $f) { Get-Content $f -Tail 5 } else { "no log found" }'
+    ].join("; ");
+    output = invoke.invokeScript(host, exitCmd, session.getSessionId());
+
+    System.log("Script execution completed.");
+
 } finally {
-	if (session){
-		host.closeSession(session.getSessionId());
-	}
+    if (session) {
+        host.closeSession(session.getSessionId());
+    }
 }

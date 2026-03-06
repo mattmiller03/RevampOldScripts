@@ -1,0 +1,16 @@
+{
+  "name": "mcp-aria-orchestrator",
+  "version": "1.0.0",
+  "description": "MCP server for VMware Aria Automation Orchestrator REST API",
+  "type": "module",
+  "main": "src/index.js",
+  "bin": {
+    "mcp-aria-orchestrator": "src/index.js"
+  },
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1"
+  }
+}
