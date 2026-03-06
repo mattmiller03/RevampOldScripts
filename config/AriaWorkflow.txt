@@ -1,0 +1,32 @@
+var output;
+var session;
+
+//This will get the password that is used for vCenter
+var category = Server.getConfigurationElementCategoryWithPath("DLAconfigs");
+
+for each (var configuration in category.configurationElements) {
+	if (configuration.name == "vCenter Creds") {
+		var vCenterPassword = configuration.getAttributeWithKey("password").value;
+	}
+}
+
+//This will get the password that is used for svc_vrapsh
+var category = Server.getConfigurationElementCategoryWithPath("RussConfigs");
+
+for each (var configuration in category.configurationElements) {
+    if (configuration.name == "PSH_vrapsh") {
+		var vraPassword = configuration.getAttributeWithKey("password").value;
+	}
+}
+
+var arguments = vCenterPassword + " " + vraPassword;
+
+try {
+	session = host.openSession();
+	var script =  '& "' + ScriptPath + '" ' + arguments;
+	output = System.getModule("com.vmware.library.powershell").invokeScript(host,script,session.getSessionId());
+} finally {
+	if (session){
+		host.closeSession(session.getSessionId());
+	}
+}
