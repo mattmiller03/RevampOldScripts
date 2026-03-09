@@ -53,7 +53,10 @@ param(
     [string]$TranscriptDir = (Join-Path $PSScriptRoot 'Output\Transcripts'),
 
     [Parameter()]
-    [switch]$SkipModuleCheck
+    [switch]$SkipModuleCheck,
+
+    [Parameter()]
+    [pscredential]$VCenterCredential
 )
 
 $ErrorActionPreference = 'Stop'
@@ -165,13 +168,26 @@ foreach ($vc in $config.VCenters) {
 
     $connection = $null
     try {
-        # Retrieve credential from DPAPI-encrypted file
-        $credPath = Join-Path $credDir $vc.CredentialFile
-        if (-not (Test-Path -Path $credPath)) {
-            Write-Error "Credential file not found: $credPath. Run Initialize-VCenterCredentials.ps1 first."
+        # Retrieve credential — use parameter if provided, otherwise load from DPAPI file
+        if ($VCenterCredential) {
+            if ($vc.SSODomain) {
+                $ssoUser = "$($VCenterCredential.UserName)@$($vc.SSODomain)"
+                $credential = [pscredential]::new($ssoUser, $VCenterCredential.Password)
+                Write-Verbose "Using Aria credential with SSO domain: $ssoUser"
+            }
+            else {
+                $credential = $VCenterCredential
+                Write-Verbose "Using Aria credential as-is (no SSODomain configured): $($VCenterCredential.UserName)"
+            }
         }
-        Write-Verbose "Loading credential from '$credPath'"
-        $credential = Import-Clixml -Path $credPath -ErrorAction Stop
+        else {
+            $credPath = Join-Path $credDir $vc.CredentialFile
+            if (-not (Test-Path -Path $credPath)) {
+                Write-Error "Credential file not found: $credPath. Run Initialize-VCenterCredentials.ps1 first."
+            }
+            Write-Verbose "Loading credential from '$credPath'"
+            $credential = Import-Clixml -Path $credPath -ErrorAction Stop
+        }
 
         # Connect to vCenter
         Write-Host "  Connecting to $vcName..." -ForegroundColor Gray
