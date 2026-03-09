@@ -171,8 +171,16 @@ foreach ($vc in $config.VCenters) {
     try {
         # Retrieve credential — use parameter if provided, otherwise load from DPAPI file
         if ($VCenterCredential) {
-            $credential = $VCenterCredential
-            Write-Verbose "Using credential passed via -VCenterCredential parameter"
+            # Build per-vCenter credential using SSODomain from config
+            if ($vc.SSODomain) {
+                $ssoUser = "$($VCenterCredential.UserName)@$($vc.SSODomain)"
+                $credential = [pscredential]::new($ssoUser, $VCenterCredential.Password)
+                Write-Verbose "Using Aria credential with SSO domain: $ssoUser"
+            }
+            else {
+                $credential = $VCenterCredential
+                Write-Verbose "Using Aria credential as-is (no SSODomain configured): $($VCenterCredential.UserName)"
+            }
         }
         else {
             $credPath = Join-Path $credDir $vc.CredentialFile

@@ -18,12 +18,14 @@
             "Name": "vcenter01.example.com",
             "Alias": "Prod:SiteA",
             "TagEnvironment": "Prod",
+            "SSODomain": "vsphere.local",
             "CredentialFile": "vcenter01.cred.xml"
         },
         {
             "Name": "vcenter02.example.com",
             "Alias": "Dev:SiteA",
             "TagEnvironment": "Dev",
+            "SSODomain": "vsphere.local",
             "CredentialFile": "vcenter02.cred.xml"
         }
     ]

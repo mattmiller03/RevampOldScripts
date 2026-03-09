@@ -19,10 +19,8 @@ if (!vcUser || !vcPass) {
     throw "Could not retrieve vCenter credentials from DLAconfigs/vCenter Creds";
 }
 
-// Append SSO domain to username
-var ssoDomain = "@ssodomain.local";
-var fullUser = vcUser + ssoDomain;
-System.log("Using vCenter credential: " + fullUser);
+// Username is passed as-is; the PS script appends SSODomain per vCenter from config JSON
+System.log("Using vCenter credential base username: " + vcUser);
 
 try {
     session = host.openSession();
@@ -43,7 +41,7 @@ try {
     // Build a PSCredential on the remote host and store in a variable for the session
     // The password is passed as a script parameter to avoid it appearing in command history
     var credCmd = '$secPass = ConvertTo-SecureString -String "' + vcPass.replace(/"/g, '`"') + '" -AsPlainText -Force; '
-        + '$global:AriaCred = New-Object System.Management.Automation.PSCredential("' + fullUser + '", $secPass); '
+        + '$global:AriaCred = New-Object System.Management.Automation.PSCredential("' + vcUser + '", $secPass); '
         + 'Write-Host "Credential created"';
 
     psExec(credCmd);
