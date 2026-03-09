@@ -1,58 +1,9 @@
-info19076
-2026-03-09 06:56:01.902 -04:00infoScript started as PID com.vmware.o11n.plugin.powershell.model.RemotePSObject@2383eb1e, polling progress...
-2026-03-09 06:56:13.015 -04:00error(com.vmware.library.powershell/invokeScript) Error in (Dynamic Script Module name : invokeScript#15) PowerShellInvocationError: Errors found while executing script 
-System.Management.Automation.ParameterBindingException: Cannot bind parameter 'Id'. Cannot convert value "com.vmware.o11n.plugin.powershell.model.RemotePSObject@2383eb1e" to type "System.Int32". Error: "Input string was not in a correct format." ---> System.Management.Automation.PSInvalidCastException: Cannot convert value "com.vmware.o11n.plugin.powershell.model.RemotePSObject@2383eb1e" to type "System.Int32". Error: "Input string was not in a correct format." ---> System.FormatException: Input string was not in a correct format.
-   at System.Number.StringToNumber(String str, NumberStyles options, NumberBuffer& number, NumberFormatInfo info, Boolean parseDecimal)
-   at System.Number.ParseInt32(String s, NumberStyles style, NumberFormatInfo info)
-   at System.ComponentModel.Int32Converter.FromString(String value, NumberFormatInfo formatInfo)
-   at System.ComponentModel.BaseNumberConverter.ConvertFrom(ITypeDescriptorContext context, CultureInfo culture, Object value)
-   --- End of inner exception stack trace ---
-   at System.Management.Automation.LanguagePrimitives.ConvertStringToInteger(Object valueToConvert, Type resultType, Boolean recursion, PSObject originalValueToConvert, IFormatProvider formatProvider, TypeTable backupTable)
-   at System.Management.Automation.LanguagePrimitives.ConversionData`1.Invoke(Object valueToConvert, Type resultType, Boolean recurse, PSObject originalValueToConvert, IFormatProvider formatProvider, TypeTable backupTable)
-   at System.Management.Automation.LanguagePrimitives.ConvertTo(Object valueToConvert, Type resultType, Boolean recursion, IFormatProvider formatProvider, TypeTable backupTypeTable)
-   at System.Management.Automation.ParameterBinderBase.CoerceTypeAsNeeded(CommandParameterInternal argument, String parameterName, Type toType, ParameterCollectionTypeInformation collectionTypeInfo, Object currentValue)
-   --- End of inner exception stack trace ---
-   at System.Management.Automation.ExceptionHandlingOps.CheckActionPreference(FunctionContext funcContext, Exception exception)
-   at System.Management.Automation.Interpreter.ActionCallInstruction`2.Run(InterpretedFrame frame)
-   at System.Management.Automation.Interpreter.EnterTryCatchFinallyInstruction.Run(InterpretedFrame frame)
-   at System.Management.Automation.Interpreter.EnterTryCatchFinallyInstruction.Run(InterpretedFrame frame)
-   at System.Management.Automation.Interpreter.Interpreter.Run(InterpretedFrame frame)
-   at System.Management.Automation.Interpreter.LightLambda.RunVoid1[T0](T0 arg0)
-   at System.Management.Automation.ScriptBlock.InvokeWithPipeImpl(ScriptBlockClauseToInvoke clauseToInvoke, Boolean createLocalScope, Dictionary`2 functionsToDefine, List`1 variablesToDefine, ErrorHandlingBehavior errorHandlingBehavior, Object dollarUnder, Object input, Object scriptThis, Pipe outputPipe, InvocationInfo invocationInfo, Object[] args)
-   at System.Management.Automation.ScriptBlock.<>c__DisplayClass57_0.<InvokeWithPipe>b__0()
-   at System.Management.Automation.Runspaces.RunspaceBase.RunActionIfNoRunningPipelinesWithThreadCheck(Action action)
-   at System.Management.Automation.ScriptBlock.InvokeWithPipe(Boolean useLocalScope, ErrorHandlingBehavior errorHandlingBehavior, Object dollarUnder, Object input, Object scriptThis, Pipe outputPipe, InvocationInfo invocationInfo, Boolean propagateAllExceptionsToTop, List`1 variablesToDefine, Dictionary`2 functionsToDefine, Object[] args)
-   at System.Management.Automation.ScriptBlock.InvokeUsingCmdlet(Cmdlet contextCmdlet, Boolean useLocalScope, ErrorHandlingBehavior errorHandlingBehavior, Object dollarUnder, Object input, Object scriptThis, Object[] args)
-   at Microsoft.PowerShell.Commands.InvokeExpressionCommand.ProcessRecord()
-   at System.Management.Automation.CommandProcessor.ProcessRecord()
-2026-03-09 06:56:13.035 -04:00errorWorkflow execution stack:
+info
+2026-03-09 07:06:53.332 -04:00info13000
+2026-03-09 07:06:53.413 -04:00errorError in (Workflow:MWM - VM Inventory Report / Invoke script (item0)#30) TypeError: Cannot find function getPropertyValue in object DynamicWrapper (Instance) : [PowerShellRemotePSObject]-[class com.vmware.o11n.plugin.powershell.model.RemotePSObject] -- VALUE : com.vmware.o11n.plugin.powershell.model.RemotePSObject@22416bc7.
+2026-03-09 07:06:53.420 -04:00errorWorkflow execution stack:
 ***
-item: 'MWM - VM Inventory Report/item0', state: 'failed', business state: 'null', exception: 'PowerShellInvocationError: Errors found while executing script 
-System.Management.Automation.ParameterBindingException: Cannot bind parameter 'Id'. Cannot convert value "com.vmware.o11n.plugin.powershell.model.RemotePSObject@2383eb1e" to type "System.Int32". Error: "Input string was not in a correct format." ---> System.Management.Automation.PSInvalidCastException: Cannot convert value "com.vmware.o11n.plugin.powershell.model.RemotePSObject@2383eb1e" to type "System.Int32". Error: "Input string was not in a correct format." ---> System.FormatException: Input string was not in a correct format.
-   at System.Number.StringToNumber(String str, NumberStyles options, NumberBuffer& number, NumberFormatInfo info, Boolean parseDecimal)
-   at System.Number.ParseInt32(String s, NumberStyles style, NumberFormatInfo info)
-   at System.ComponentModel.Int32Converter.FromString(String value, NumberFormatInfo formatInfo)
-   at System.ComponentModel.BaseNumberConverter.ConvertFrom(ITypeDescriptorContext context, CultureInfo culture, Object value)
-   --- End of inner exception stack trace ---
-   at System.Management.Automation.LanguagePrimitives.ConvertStringToInteger(Object valueToConvert, Type resultType, Boolean recursion, PSObject originalValueToConvert, IFormatProvider formatProvider, TypeTable backupTable)
-   at System.Management.Automation.LanguagePrimitives.ConversionData`1.Invoke(Object valueToConvert, Type resultType, Boolean recurse, PSObject originalValueToConvert, IFormatProvider formatProvider, TypeTable backupTable)
-   at System.Management.Automation.LanguagePrimitives.ConvertTo(Object valueToConvert, Type resultType, Boolean recursion, IFormatProvider formatProvider, TypeTable backupTypeTable)
-   at System.Management.Automation.ParameterBinderBase.CoerceTypeAsNeeded(CommandParameterInternal argument, String parameterName, Type toType, ParameterCollectionTypeInformation collectionTypeInfo, Object currentValue)
-   --- End of inner exception stack trace ---
-   at System.Management.Automation.ExceptionHandlingOps.CheckActionPreference(FunctionContext funcContext, Exception exception)
-   at System.Management.Automation.Interpreter.ActionCallInstruction`2.Run(InterpretedFrame frame)
-   at System.Management.Automation.Interpreter.EnterTryCatchFinallyInstruction.Run(InterpretedFrame frame)
-   at System.Management.Automation.Interpreter.EnterTryCatchFinallyInstruction.Run(InterpretedFrame frame)
-   at System.Management.Automation.Interpreter.Interpreter.Run(InterpretedFrame frame)
-   at System.Management.Automation.Interpreter.LightLambda.RunVoid1[T0](T0 arg0)
-   at System.Management.Automation.ScriptBlock.InvokeWithPipeImpl(ScriptBlockClauseToInvoke clauseToInvoke, Boolean createLocalScope, Dictionary`2 functionsToDefine, List`1 variablesToDefine, ErrorHandlingBehavior errorHandlingBehavior, Object dollarUnder, Object input, Object scriptThis, Pipe outputPipe, InvocationInfo invocationInfo, Object[] args)
-   at System.Management.Automation.ScriptBlock.<>c__DisplayClass57_0.<InvokeWithPipe>b__0()
-   at System.Management.Automation.Runspaces.RunspaceBase.RunActionIfNoRunningPipelinesWithThreadCheck(Action action)
-   at System.Management.Automation.ScriptBlock.InvokeWithPipe(Boolean useLocalScope, ErrorHandlingBehavior errorHandlingBehavior, Object dollarUnder, Object input, Object scriptThis, Pipe outputPipe, InvocationInfo invocationInfo, Boolean propagateAllExceptionsToTop, List`1 variablesToDefine, Dictionary`2 functionsToDefine, Object[] args)
-   at System.Management.Automation.ScriptBlock.InvokeUsingCmdlet(Cmdlet contextCmdlet, Boolean useLocalScope, ErrorHandlingBehavior errorHandlingBehavior, Object dollarUnder, Object input, Object scriptThis, Object[] args)
-   at Microsoft.PowerShell.Commands.InvokeExpressionCommand.ProcessRecord()
-   at System.Management.Automation.CommandProcessor.ProcessRecord()
- (Dynamic Script Module name : invokeScript#15)'
+item: 'MWM - VM Inventory Report/item0', state: 'failed', business state: 'null', exception: 'TypeError: Cannot find function getPropertyValue in object DynamicWrapper (Instance) : [PowerShellRemotePSObject]-[class com.vmware.o11n.plugin.powershell.model.RemotePSObject] -- VALUE : com.vmware.o11n.plugin.powershell.model.RemotePSObject@22416bc7. (Workflow:MWM - VM Inventory Report / Invoke script (item0)#30)'
 workflow: 'MWM - VM Inventory Report' (f9ec9879-987e-425a-bfef-21b1b1138f5d) 
 |  'attribute': name=ScriptPath type=string value=C:\DLA-Failsafe\vRA\MattM\Workflow\Inventory\Get-AllVMInventory.ps1
 |  'attribute': name=host type=PowerShell:PowerShellHost value=dunes://service.dunes.ch/CustomSDKObject?id='e23d7c79-e3d3-4453-b12d-842ac949b47e'&dunesName='PowerShell:PowerShellHost'
