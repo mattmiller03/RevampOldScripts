@@ -3,6 +3,27 @@ var session;
 var pollInterval = 10; // seconds between progress checks
 var logFile = ScriptPath.replace(/\.ps1$/i, "_progress.log");
 
+// Pull vCenter credentials from Aria config element (Assets > Configurations)
+var category = Server.getConfigurationElementCategoryWithPath("DLAconfigs");
+var vcUser = "";
+var vcPass = "";
+
+for each (var configuration in category.configurationElements) {
+    if (configuration.name == "vCenter Creds") {
+        vcUser = configuration.getAttributeWithKey("username").value;
+        vcPass = configuration.getAttributeWithKey("password").value;
+    }
+}
+
+if (!vcUser || !vcPass) {
+    throw "Could not retrieve vCenter credentials from DLAconfigs/vCenter Creds";
+}
+
+// Append SSO domain to username
+var ssoDomain = "@ssodomain.local";
+var fullUser = vcUser + ssoDomain;
+System.log("Using vCenter credential: " + fullUser);
+
 try {
     session = host.openSession();
 
@@ -19,11 +40,33 @@ try {
         return hostOut ? hostOut.trim() : "";
     }
 
-    // Start the script as a background process via pwsh.exe
+    // Build a PSCredential on the remote host and store in a variable for the session
+    // The password is passed as a script parameter to avoid it appearing in command history
+    var credCmd = '$secPass = ConvertTo-SecureString -String "' + vcPass.replace(/"/g, '`"') + '" -AsPlainText -Force; '
+        + '$global:AriaCred = New-Object System.Management.Automation.PSCredential("' + fullUser + '", $secPass); '
+        + 'Write-Host "Credential created"';
+
+    psExec(credCmd);
+    System.log("Credential prepared on remote host.");
+
+    // Start the script as a background process via pwsh.exe, passing the credential via a temp file
+    // Write the credential to a temp clixml so the child pwsh.exe process can read it
+    var credFile = ScriptPath.replace(/\.ps1$/i, "_tempcred.xml");
+    var escapedCredFile = credFile.replace(/\\/g, "\\\\");
+
+    var saveCredCmd = '$global:AriaCred | Export-Clixml -Path "' + escapedCredFile + '" -Force; '
+        + 'Write-Host "Credential saved to temp file"';
+    psExec(saveCredCmd);
+
+    // Build the pwsh.exe command that loads the cred and passes it to the script
+    var psCmd = '$cred = Import-Clixml -Path \\\"' + escapedCredFile + '\\\"; '
+        + '& \\\"' + escapedScript + '\\\" -VCenterCredential $cred; '
+        + 'Remove-Item -Path \\\"' + escapedCredFile + '\\\" -Force -ErrorAction SilentlyContinue';
+
     var startCmd = '$logFile = "' + escapedLog + '"; '
         + 'Remove-Item -Path $logFile -Force -ErrorAction SilentlyContinue; '
         + '$proc = Start-Process -FilePath "C:\\Program Files\\PowerShell\\7\\pwsh.exe" '
-        + '-ArgumentList @("-NoProfile","-NonInteractive","-File","' + escapedScript + '") '
+        + '-ArgumentList @("-NoProfile","-NonInteractive","-Command","' + psCmd + '") '
         + '-RedirectStandardOutput $logFile -PassThru -NoNewWindow; '
         + 'Write-Host $proc.Id';
 
@@ -79,19 +122,14 @@ try {
     System.log("Script execution completed.");
 
 } finally {
+    // Clean up temp credential file if it still exists
+    try {
+        if (session) {
+            session.invokeScript('Remove-Item -Path "' + escapedCredFile + '" -Force -ErrorAction SilentlyContinue');
+        }
+    } catch(e) { /* ignore cleanup errors */ }
+
     if (session) {
         host.closeSession(session.getSessionId());
-    }
-}
-
-
-
-
-//This will get the password that is used for vCenter
-var category = Server.getConfigurationElementCategoryWithPath("DLAconfigs");
- 
-for each (var configuration in category.configurationElements) {
-    if (configuration.name == "vCenter Creds") {
-        var vCenterPassword = configuration.getAttributeWithKey("password").value;
     }
 }
