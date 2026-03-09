@@ -39,18 +39,25 @@ try {
     }
 
     // Write a temp launcher script that builds the PSCredential and calls the inventory script
-    // This avoids nested quote escaping issues with Start-Process -Command
+    // Uses a PS here-string (@'...'@) so content is written literally — no variable expansion
     var launcherFile = ScriptPath.replace(/\.ps1$/i, "_launcher.ps1");
     var escapedLauncher = launcherFile.replace(/\\/g, "\\\\");
 
-    var launcherContent = "$u = '" + vcUser.replace(/'/g, "''") + "'\n"
-        + "$p = '" + vcPass.replace(/'/g, "''") + "'\n"
-        + "$secP = ConvertTo-SecureString -String $p -AsPlainText -Force\n"
-        + "$cred = New-Object System.Management.Automation.PSCredential($u, $secP)\n"
-        + "& '" + ScriptPath.replace(/'/g, "''") + "' -VCenterCredential $cred\n"
-        + "Remove-Item -Path '" + launcherFile.replace(/'/g, "''") + "' -Force -ErrorAction SilentlyContinue";
+    // Double single quotes for PS string literals inside the launcher file
+    var safeUser = vcUser.replace(/'/g, "''");
+    var safePass = vcPass.replace(/'/g, "''");
+    var safePath = ScriptPath.replace(/'/g, "''");
+    var safeLauncher = launcherFile.replace(/'/g, "''");
 
-    var writeLauncherCmd = '[System.IO.File]::WriteAllText("' + escapedLauncher + '", "' + launcherContent.replace(/\\/g, "\\\\").replace(/"/g, '`"').replace(/\n/g, '`n') + '"); '
+    var writeLauncherCmd = "$content = @'\r\n"
+        + "$u = '" + safeUser + "'\r\n"
+        + "$p = '" + safePass + "'\r\n"
+        + "$secP = ConvertTo-SecureString -String $p -AsPlainText -Force\r\n"
+        + "$cred = New-Object System.Management.Automation.PSCredential($u, $secP)\r\n"
+        + "& '" + safePath + "' -VCenterCredential $cred\r\n"
+        + "Remove-Item -Path '" + safeLauncher + "' -Force -ErrorAction SilentlyContinue\r\n"
+        + "'@\r\n"
+        + '[System.IO.File]::WriteAllText("' + escapedLauncher + '", $content)\r\n'
         + 'Write-Host "Launcher written"';
     psExec(writeLauncherCmd);
 
