@@ -10,7 +10,7 @@ var vcPass = "";
 
 for each (var configuration in category.configurationElements) {
     if (configuration.name == "vCenter Creds") {
-        vcUser = configuration.getAttributeWithKey("username").value;
+        vcUser = configuration.getAttributeWithKey("userName").value;
         vcPass = configuration.getAttributeWithKey("password").value;
     }
 }
@@ -38,28 +38,14 @@ try {
         return hostOut ? hostOut.trim() : "";
     }
 
-    // Build a PSCredential on the remote host and store in a variable for the session
-    // The password is passed as a script parameter to avoid it appearing in command history
-    var credCmd = '$secPass = ConvertTo-SecureString -String "' + vcPass.replace(/"/g, '`"') + '" -AsPlainText -Force; '
-        + '$global:AriaCred = New-Object System.Management.Automation.PSCredential("' + vcUser + '", $secPass); '
-        + 'Write-Host "Credential created"';
-
-    psExec(credCmd);
-    System.log("Credential prepared on remote host.");
-
-    // Start the script as a background process via pwsh.exe, passing the credential via a temp file
-    // Write the credential to a temp clixml so the child pwsh.exe process can read it
-    var credFile = ScriptPath.replace(/\.ps1$/i, "_tempcred.xml");
-    var escapedCredFile = credFile.replace(/\\/g, "\\\\");
-
-    var saveCredCmd = '$global:AriaCred | Export-Clixml -Path "' + escapedCredFile + '" -Force; '
-        + 'Write-Host "Credential saved to temp file"';
-    psExec(saveCredCmd);
-
-    // Build the pwsh.exe command that loads the cred and passes it to the script
-    var psCmd = '$cred = Import-Clixml -Path \\\"' + escapedCredFile + '\\\"; '
-        + '& \\\"' + escapedScript + '\\\" -VCenterCredential $cred; '
-        + 'Remove-Item -Path \\\"' + escapedCredFile + '\\\" -Force -ErrorAction SilentlyContinue';
+    // Pass username and password directly to pwsh.exe — no DPAPI/Export-Clixml involved
+    // The PS script builds its own PSCredential from these plain-text parameters
+    // Single quotes inside the -Command string prevent PS from interpreting special chars
+    var psCmd = "$u = '" + vcUser.replace(/'/g, "''") + "'; "
+        + "$p = '" + vcPass.replace(/'/g, "''") + "'; "
+        + "$secP = ConvertTo-SecureString -String $p -AsPlainText -Force; "
+        + "$cred = New-Object System.Management.Automation.PSCredential($u, $secP); "
+        + "& \\\"" + escapedScript + "\\\" -VCenterCredential $cred";
 
     var startCmd = '$logFile = "' + escapedLog + '"; '
         + 'Remove-Item -Path $logFile -Force -ErrorAction SilentlyContinue; '
@@ -120,13 +106,6 @@ try {
     System.log("Script execution completed.");
 
 } finally {
-    // Clean up temp credential file if it still exists
-    try {
-        if (session) {
-            session.invokeScript('Remove-Item -Path "' + escapedCredFile + '" -Force -ErrorAction SilentlyContinue');
-        }
-    } catch(e) { /* ignore cleanup errors */ }
-
     if (session) {
         host.closeSession(session.getSessionId());
     }
