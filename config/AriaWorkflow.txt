@@ -14,12 +14,27 @@ try {
         + 'Remove-Item -Path $logFile -Force -ErrorAction SilentlyContinue; '
         + '$proc = Start-Process -FilePath "C:\\Program Files\\PowerShell\\7\\pwsh.exe" '
         + '-ArgumentList @("-NoProfile","-NonInteractive","-File","' + escapedScript + '") '
-        + '-RedirectStandardOutput $logFile -PassThru -NoNewWindow; '
-        + '$proc.Id';
+        + '-RedirectStandardOutput $logFile -PassThru -NoNewWindow';
 
-    var pidResult = invoke.invokeScript(host, startCmd, session.getSessionId());
-    var pid = pidResult.toString().trim();
+    // Write PID to a temp file so we can read it back as a plain string
+    var pidFile = logFile.replace(/\.log$/i, "_pid.txt");
+    var escapedPidFile = pidFile.replace(/\\/g, "\\\\");
+    var startCmdFull = startCmd + '; '
+        + '[System.IO.File]::WriteAllText("' + escapedPidFile + '", $proc.Id.ToString())';
+
+    invoke.invokeScript(host, startCmdFull, session.getSessionId());
+
+    // Read PID back as plain text
+    var pidReadCmd = '[System.IO.File]::ReadAllText("' + escapedPidFile + '").Trim()';
+    var pidResult = invoke.invokeScript(host, pidReadCmd, session.getSessionId());
+    var pid = pidResult.getPropertyValue("value");
     System.log("Script started as PID " + pid + ", polling progress...");
+
+    // Helper: extract string value from RemotePSObject
+    function getVal(remotePsObj) {
+        try { return remotePsObj.getPropertyValue("value"); }
+        catch(e) { return remotePsObj.toString(); }
+    }
 
     // Poll the log file for new output until the process exits
     var lastLineCount = 0;
@@ -29,9 +44,10 @@ try {
         System.sleep(pollInterval * 1000);
 
         // Check if process is still running
-        var checkCmd = '(Get-Process -Id ' + pid + ' -ErrorAction SilentlyContinue) -ne $null';
-        var isRunning = invoke.invokeScript(host, checkCmd, session.getSessionId());
-        running = (isRunning.toString().trim().toLowerCase() === "true");
+        var checkCmd = 'if (Get-Process -Id ' + pid + ' -ErrorAction SilentlyContinue) { "RUNNING" } else { "DONE" }';
+        var stateResult = invoke.invokeScript(host, checkCmd, session.getSessionId());
+        var state = getVal(stateResult);
+        running = (state === "RUNNING");
 
         // Read any new lines from the log file
         var readCmd = '$f = "' + escapedLog + '"; '
@@ -41,14 +57,12 @@ try {
             + '} else { "" } } else { "" }';
 
         var newOutput = invoke.invokeScript(host, readCmd, session.getSessionId());
-        var newText = newOutput.toString().trim();
+        var newText = getVal(newOutput);
 
-        if (newText.length > 0) {
-            // Count new lines and update offset
+        if (newText !== null && newText.length > 0) {
             var newLines = newText.split("\n");
             lastLineCount += newLines.length;
 
-            // Relay each line to the Aria workflow log
             for (var i = 0; i < newLines.length; i++) {
                 System.log(newLines[i]);
             }
@@ -63,18 +77,22 @@ try {
         + '} else { "" } } else { "" }';
 
     var finalOutput = invoke.invokeScript(host, finalCmd, session.getSessionId());
-    var finalText = finalOutput.toString().trim();
-    if (finalText.length > 0) {
+    var finalText = getVal(finalOutput);
+    if (finalText !== null && finalText.length > 0) {
         var finalLines = finalText.split("\n");
         for (var j = 0; j < finalLines.length; j++) {
             System.log(finalLines[j]);
         }
     }
 
-    // Check exit code
+    // Grab last few lines as output
     var exitCmd = '$f = "' + escapedLog + '"; '
         + 'if (Test-Path $f) { Get-Content $f -Tail 5 } else { "no log found" }';
     output = invoke.invokeScript(host, exitCmd, session.getSessionId());
+
+    // Clean up pid file
+    var cleanCmd = 'Remove-Item -Path "' + escapedPidFile + '" -Force -ErrorAction SilentlyContinue';
+    invoke.invokeScript(host, cleanCmd, session.getSessionId());
 
     System.log("Script execution completed.");
 
