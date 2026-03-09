@@ -57,7 +57,10 @@ param(
     [switch]$SkipModuleCheck,
 
     [Parameter()]
-    [pscredential]$VCenterCredential
+    [pscredential]$VCenterCredential,
+
+    [Parameter()]
+    [string]$NetworkSharePath
 )
 
 $ErrorActionPreference = 'Stop'
@@ -866,6 +869,24 @@ foreach ($vcName in $perVCenterData.Keys) {
 }
 
 #endregion Search Tab + VBA
+
+#region Copy to Network Share
+
+if ($NetworkSharePath) {
+    Write-Host "`nCopying report to network share..." -ForegroundColor Cyan
+    try {
+        if (-not (Test-Path -Path $NetworkSharePath)) {
+            New-Item -Path $NetworkSharePath -ItemType Directory -Force | Out-Null
+        }
+        Copy-Item -Path $reportFile -Destination $NetworkSharePath -Force -ErrorAction Stop
+        Write-Host "  Copied to: $NetworkSharePath" -ForegroundColor Green
+    }
+    catch {
+        Write-Warning "Failed to copy report to network share: $_"
+    }
+}
+
+#endregion Copy to Network Share
 
 #region Summary
 
