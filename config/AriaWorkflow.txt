@@ -83,3 +83,15 @@ try {
         host.closeSession(session.getSessionId());
     }
 }
+
+
+
+
+//This will get the password that is used for vCenter
+var category = Server.getConfigurationElementCategoryWithPath("DLAconfigs");
+ 
+for each (var configuration in category.configurationElements) {
+    if (configuration.name == "vCenter Creds") {
+        var vCenterPassword = configuration.getAttributeWithKey("password").value;
+    }
+}
