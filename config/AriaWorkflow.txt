@@ -119,6 +119,23 @@ try {
 
     System.log("Script execution completed.");
 
+    // Copy the output spreadsheet to the network share
+    if (NetworkSharePath) {
+        System.log("Copying report to network share: " + NetworkSharePath);
+
+        // Determine the output file based on which script was run
+        var scriptDir = ScriptPath.replace(/\\[^\\]+\.ps1$/i, "");
+        var copyCmd = '$src = Get-ChildItem -Path "' + scriptDir.replace(/\\/g, "\\\\") + '\\Output" -Recurse -Filter "*.xlsm" -File | '
+            + 'Sort-Object LastWriteTime -Descending | Select-Object -First 1; '
+            + 'if ($src) { '
+            + 'Copy-Item -Path $src.FullName -Destination "' + NetworkSharePath.replace(/\\/g, "\\\\") + '" -Force; '
+            + 'Write-Host "Copied $($src.Name) to ' + NetworkSharePath + '" '
+            + '} else { Write-Host "No .xlsm file found to copy" }';
+
+        var copyResult = psExec(copyCmd);
+        System.log(copyResult);
+    }
+
 } finally {
     if (session) {
         host.closeSession(session.getSessionId());
