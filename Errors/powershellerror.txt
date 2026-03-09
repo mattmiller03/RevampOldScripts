@@ -1,9 +1,36 @@
-info
-2026-03-09 07:06:53.332 -04:00info13000
-2026-03-09 07:06:53.413 -04:00errorError in (Workflow:MWM - VM Inventory Report / Invoke script (item0)#30) TypeError: Cannot find function getPropertyValue in object DynamicWrapper (Instance) : [PowerShellRemotePSObject]-[class com.vmware.o11n.plugin.powershell.model.RemotePSObject] -- VALUE : com.vmware.o11n.plugin.powershell.model.RemotePSObject@22416bc7.
-2026-03-09 07:06:53.420 -04:00errorWorkflow execution stack:
+infoUsing vCenter credential base username: svc_VPM_Powershell
+2026-03-09 10:15:16.374 -04:00infoCredential prepared on remote host.
+2026-03-09 10:15:18.740 -04:00errorError in (Workflow:MWM - VM Inventory Report / Invoke script (item0)#35) PS error: System.Security.Cryptography.CryptographicException: The requested operation cannot be completed. The computer must be trusted for delegation and the current user account must be configured to allow delegation.
+
+   at System.Security.Cryptography.ProtectedData.Protect(Byte[] userData, Byte[] optionalEntropy, DataProtectionScope scope)
+   at Microsoft.PowerShell.SecureStringHelper.Protect(SecureString input)
+   at System.Management.Automation.InternalSerializer.HandleSecureString(Object source, String streamName, String property)
+   at System.Management.Automation.InternalSerializer.WriteOnePrimitiveKnownType(InternalSerializer serializer, String streamName, String property, Object source, TypeSerializationInfo entry)
+   at System.Management.Automation.InternalSerializer.HandlePrimitiveKnownTypePSObject(Object source, String streamName, String property, Int32 depth)
+   at System.Management.Automation.InternalSerializer.WriteOneObject(Object source, String streamName, String property, Int32 depth)
+   at System.Management.Automation.InternalSerializer.SerializeProperties(IEnumerable`1 propertyCollection, String name, Int32 depth)
+   at System.Management.Automation.InternalSerializer.WritePSObjectProperties(PSObject source, Int32 depth, IEnumerable`1 specificPropertiesToSerialize)
+   at System.Management.Automation.InternalSerializer.HandleComplexTypePSObject(Object source, String streamName, String property, Int32 depth)
+   at System.Management.Automation.InternalSerializer.WriteOneObject(Object source, String streamName, String property, Int32 depth)
+   at Microsoft.PowerShell.Commands.ExportClixmlCommand.ProcessRecord()
+   at System.Management.Automation.CommandProcessor.ProcessRecord()
+2026-03-09 10:15:18.751 -04:00errorWorkflow execution stack:
 ***
-item: 'MWM - VM Inventory Report/item0', state: 'failed', business state: 'null', exception: 'TypeError: Cannot find function getPropertyValue in object DynamicWrapper (Instance) : [PowerShellRemotePSObject]-[class com.vmware.o11n.plugin.powershell.model.RemotePSObject] -- VALUE : com.vmware.o11n.plugin.powershell.model.RemotePSObject@22416bc7. (Workflow:MWM - VM Inventory Report / Invoke script (item0)#30)'
+item: 'MWM - VM Inventory Report/item0', state: 'failed', business state: 'null', exception: 'PS error: System.Security.Cryptography.CryptographicException: The requested operation cannot be completed. The computer must be trusted for delegation and the current user account must be configured to allow delegation.
+
+   at System.Security.Cryptography.ProtectedData.Protect(Byte[] userData, Byte[] optionalEntropy, DataProtectionScope scope)
+   at Microsoft.PowerShell.SecureStringHelper.Protect(SecureString input)
+   at System.Management.Automation.InternalSerializer.HandleSecureString(Object source, String streamName, String property)
+   at System.Management.Automation.InternalSerializer.WriteOnePrimitiveKnownType(InternalSerializer serializer, String streamName, String property, Object source, TypeSerializationInfo entry)
+   at System.Management.Automation.InternalSerializer.HandlePrimitiveKnownTypePSObject(Object source, String streamName, String property, Int32 depth)
+   at System.Management.Automation.InternalSerializer.WriteOneObject(Object source, String streamName, String property, Int32 depth)
+   at System.Management.Automation.InternalSerializer.SerializeProperties(IEnumerable`1 propertyCollection, String name, Int32 depth)
+   at System.Management.Automation.InternalSerializer.WritePSObjectProperties(PSObject source, Int32 depth, IEnumerable`1 specificPropertiesToSerialize)
+   at System.Management.Automation.InternalSerializer.HandleComplexTypePSObject(Object source, String streamName, String property, Int32 depth)
+   at System.Management.Automation.InternalSerializer.WriteOneObject(Object source, String streamName, String property, Int32 depth)
+   at Microsoft.PowerShell.Commands.ExportClixmlCommand.ProcessRecord()
+   at System.Management.Automation.CommandProcessor.ProcessRecord()
+ (Workflow:MWM - VM Inventory Report / Invoke script (item0)#35)'
 workflow: 'MWM - VM Inventory Report' (f9ec9879-987e-425a-bfef-21b1b1138f5d) 
 |  'attribute': name=ScriptPath type=string value=C:\DLA-Failsafe\vRA\MattM\Workflow\Inventory\Get-AllVMInventory.ps1
 |  'attribute': name=host type=PowerShell:PowerShellHost value=dunes://service.dunes.ch/CustomSDKObject?id='e23d7c79-e3d3-4453-b12d-842ac949b47e'&dunesName='PowerShell:PowerShellHost'
